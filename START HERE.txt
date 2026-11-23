@@ -1,0 +1,10 @@
+DND Infinite
+============
+
+To open the app: double-click  dnd-infinite.html
+
+It works offline, straight from this folder. Your characters, homebrew and
+custom sheet backgrounds are saved in your browser (so use the same browser
+each time, and use Export to keep backups of characters).
+
+index.html is for developers and needs a local web server (see README.md).

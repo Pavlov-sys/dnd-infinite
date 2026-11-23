@@ -1,0 +1,8 @@
+node_modules/
+.DS_Store
+
+# QA screenshots
+/*.png
+
+# Standalone build output (shipped in release zips)
+/dnd-infinite.html
