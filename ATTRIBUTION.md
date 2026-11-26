@@ -4,7 +4,7 @@ This work includes material from the System Reference Document 5.2 ("SRD 5.2") b
 
 Spells, equipment, magic items, monsters and the full rules text of class features, traits and feats (`js/data/srd/generated/`) were converted from the SRD 5.2 JSON published by the 5e-bits/5e-database project (https://github.com/5e-bits/5e-database, MIT License, Copyright (c) 2018-2020 Adrian Padua, Christopher Ward) using `tools/import-srd.py`. Class, species and background structures in `js/data/srd/*.js` are modelled by hand from the SRD 5.2.
 
-The "Powder & Steel" example homebrew pack is original content by the DND Infinite contributors.
+The "Powder & Steel" example homebrew pack is original content by the Infinity Codex contributors.
 
 ## Optional content packs (`js/data/packs/`)
 

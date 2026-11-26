@@ -31,6 +31,19 @@ Priorities follow the feature set of a full online character platform, with the 
 - [ ] Import D&D Beyond's character JSON (more exact than the PDF: base scores, chosen bonuses, prepared spells)
 - [ ] Import multiclassed characters once multiclassing exists
 
+## v0.11 — Homebrew Builder (done)
+- [x] Step-by-step builder for every homebrew type, modelled on the character builder (step bar with badges, choice cards, Back/Next, review and save)
+- [x] Full class builder (hit die, proficiencies, spellcasting incl. third casters, features per level, ASI levels, resources, gear) instead of JSON only
+- [x] Spells: casting/component/duration cards, attack/save/damage pickers, automatic upcast text; weapons: dice picker, damage types, properties, mastery
+- [x] Monsters: hit points from hit dice, XP from CR, quick-add attacks using the creature's scores; species trait templates
+- [x] Anything a step doesn't cover appears in "More"; JSON editing stays available
+
+## v0.10 — Homebrew packs and the Library (done)
+- [x] Create any number of homebrew packs (name, author, version, description, license, cover colour); My Homebrew is the default
+- [x] Choose the pack when creating or editing an entry; move entries between packs
+- [x] Download a pack as one .json file; importing the same pack again updates it
+- [x] Compendium → Library: shelves for your packs, packs shared with you and the built-in books, each with a page listing its contents and a filtered compendium view
+
 ## v0.9 — Quick sheet adjustments (done)
 - [x] ⚙ Adjust side panel inside the sheet, using the sheet's own theme
 - [x] Bonus or exact value for AC, initiative, speed, max HP, passives, spell attack and DC, every save and skill; proficiency, half and expertise by hand

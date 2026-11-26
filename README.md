@@ -1,8 +1,8 @@
-# ∞ DND Infinite
+# Infinity Codex
 
 **An open-source character builder and digital character sheet for 5th edition fantasy roleplaying (2024 rules / SRD 5.2).**
 
-DND Infinite is a free, community-driven alternative to proprietary character tools. Build a character step by step, with every choice explained, and play from a sheet that does the math and rolls the dice for you. Add your own homebrew as content packs.
+Infinity Codex is a free, community-driven alternative to proprietary character tools. Build a character step by step, with every choice explained, and play from a sheet that does the math and rolls the dice for you. Add your own homebrew as content packs.
 
 
 ## Features (v0.1)
@@ -14,6 +14,8 @@ DND Infinite is a free, community-driven alternative to proprietary character to
   - Starting equipment options for class and background
 - **Character sheet** in a dark, framed layout like D&D Beyond's: auto-calculated AC, HP, saves, skills, passives, attacks, spell DC and slots
   - Actions tab split into Attacks, Actions, Bonus Actions, Reactions, Other and Limited Use, each listing the weapons, spells, combat actions and class features that use it
+  - **Homebrew Builder**: create spells, items (weapons, armor, shields, clothing, gear, tools, magic items), species, backgrounds, feats, subclasses, monsters and full classes step by step, like the character builder, with choice cards, worked-out numbers and quick-add templates; every field stays reachable and JSON is one click away
+  - **Homebrew packs and the Library**: organise your homebrew into packs, download a pack as a .json file to share it, and browse every pack (yours, imported, built-in books) in Compendium → Library. Packs can have an uploaded cover image (600 × 800 px recommended), which is saved in the shared file. The built-in books use public-domain paintings from Wikimedia Commons (credits in img/covers/CREDITS.md)
   - **⚙ Adjust** on every sheet (and ⚙ on Saving Throws, Senses, Skills and AC): change any number, set proficiency or expertise by hand, add advantage or disadvantage that's applied when you roll, add or remove spells and prepared spells, and add catalogue or custom items (clothes, weapons, armor, gear, magic items) — all in a side panel that matches the sheet
   - **Customize** button on every sheet: dark or light mode, accent colour, 8 built-in backgrounds or your own uploaded image (recommended 2560 × 1440, 16:9; at least 1920 × 1080) with darken, blur and focus controls, whole-page background, panel opacity, frame style and text size; save a look as the default for new characters
   - Spells tab with casting time, range, hit/DC, effect and notes columns, per-level slot boxes, search and level filters; Background and Notes tabs
@@ -23,19 +25,23 @@ DND Infinite is a free, community-driven alternative to proprietary character to
 - **Full SRD 5.2**: all 339 spells, 341 monsters with clickable stat blocks, 262 magic items, all equipment, and the complete rules text of every class feature, trait and feat
 - **Optional content packs** (openly licensed, switchable): 4 new classes (Mechanist, Witch, Vanguard, Theurge), 100+ new subclasses, 34 species options, 26 backgrounds, 14 feats, 900+ extra spells, 1,000+ magic items and 1,900+ extra monsters from Tome of Heroes, Black Flag, Tal'Dorei, Level Up: Advanced 5E, Deep Magic, Vault of Magic, Tome of Beasts and more
 - **Compendium**: searchable and filterable spells (level, class, school), monsters (CR, type), equipment, magic items (rarity), classes, species, backgrounds, feats and rules
-- **Homebrew**: import by drag-and-drop, file, paste or URL with a preview (DND Infinite packs and **5etools homebrew files**), export any selection as a named pack, "Copy to My Homebrew" from any compendium entry, "Start from…" an existing entry, paste-text quick fill, and auto-saved drafts
+- **Homebrew**: import by drag-and-drop, file, paste or URL with a preview (Infinity Codex packs and **5etools homebrew files**), export any selection as a named pack, "Copy to My Homebrew" from any compendium entry, "Start from…" an existing entry, paste-text quick fill, and auto-saved drafts
 - **Homebrew editor**: form-based creation of subclasses, species, backgrounds, feats, spells, items, magic items and monsters (classes via JSON), with live preview; saved to a personal pack, plus import/export of shareable content packs
 - **Import from D&D Beyond**: choose the PDF from D&D Beyond's “Export to PDF” and the character is rebuilt here — class, subclass, species, background, ability scores, skills and Expertise, feats (with Magic Initiate spells), spells, inventory, coins, HP and personality. Anything your content doesn't have (a homebrew class, a species, a background, feats, spells) becomes a placeholder in My Homebrew built from the sheet itself — features text, proficiencies, hit die, spell slots, speed — so the character works as is and you can edit the placeholders later. A preview shows what matched, what was created, and any number that differs from the original sheet. The PDF is read in the browser and never uploaded.
 - **Import/export** characters as JSON; everything is stored locally in your browser
+- **Backup & restore**: one file holds every character, homebrew pack, portrait and setting; restore by merging (newer copy wins, nothing deleted) or replacing everything, with a reminder on My Characters when a backup is overdue
+- **Undo** on the sheet: every change (damage, healing, slots, resources, rests, conditions, items, level-ups) can be undone step by step from the pop-up or with Ctrl+Z / Cmd+Z
+- **Level-up wizard**: shows the new features and improvements, takes average or rolled Hit Points, then lists the new choices with links into the builder; each level-up is saved so it can be rolled back
+- **Character cards** show current HP and get scuffed, scratched and bloodied below half
 
 ## Running it
 
-**Easiest:** double-click **`dnd-infinite.html`** (included in release zips). It's the whole app in one file and works offline straight from your disk. Characters and homebrew are saved in your browser.
+**Easiest:** double-click **`infinity-codex.html`** (included in release zips). It's the whole app in one file and works offline straight from your disk. Characters and homebrew are saved in your browser.
 
 To build that file yourself (needs [Bun](https://bun.sh)):
 
 ```bash
-bun tools/build-standalone.mjs      # writes dnd-infinite.html
+bun tools/build-standalone.mjs      # writes infinity-codex.html
 ```
 
 **For development** there's no build step: serve the folder with any static web server:
@@ -45,7 +51,7 @@ python3 -m http.server 8080      # then open http://localhost:8080
 # or: npx serve .
 ```
 
-(Opening `index.html` directly from disk won't work, because browsers block ES modules on `file://`; it shows a note pointing you to `dnd-infinite.html`.)
+(Opening `index.html` directly from disk won't work, because browsers block ES modules on `file://`; it shows a note pointing you to `infinity-codex.html`.)
 
 Regenerate the bundled data (only needed when updating it):
 
@@ -83,8 +89,11 @@ The **rules engine has no DOM dependencies**, so it can be reused by a future se
 
 - **Code**: MIT License (see `LICENSE`).
 - **Game content**: from the System Reference Document 5.2 by Wizards of the Coast LLC (CC-BY-4.0), plus optional packs under CC-BY-4.0 or the OGL 1.0a. See `ATTRIBUTION.md` and `LICENSES/`.
-- DND Infinite is an unofficial fan project, **not** affiliated with, endorsed by or sponsored by Wizards of the Coast or D&D Beyond. "Dungeons & Dragons" and "D&D" are trademarks of Wizards of the Coast. Do not add non-open published content to this repository. Homebrew packs you keep privately are your own business; packs contributed here must be original or openly licensed.
+- Infinity Codex is an unofficial fan project, **not** affiliated with, endorsed by or sponsored by Wizards of the Coast or D&D Beyond. "Dungeons & Dragons" and "D&D" are trademarks of Wizards of the Coast. Do not add non-open published content to this repository. Homebrew packs you keep privately are your own business; packs contributed here must be original or openly licensed.
 
 ## Roadmap
 
 See `ROADMAP.md`. Contributions welcome — see `CONTRIBUTING.md`.
+
+## Passkey
+The site opens with a passkey screen. Change the passkey with `node tools/set-passkey.mjs <new passkey>`, rebuild with `bun tools/build-standalone.mjs`, and push; everyone enters the new one once. The 🔒 button in the top bar locks the current device again. This is a casual lock: the files are public on GitHub, so it keeps out people who only have the link.

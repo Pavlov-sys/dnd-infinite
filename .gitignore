@@ -5,4 +5,4 @@ node_modules/
 /*.png
 
 # Standalone build output (shipped in release zips)
-/dnd-infinite.html
+/infinity-codex.html

@@ -3,30 +3,35 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>DND Infinite — Character Builder</title>
+  <title>Infinity Codex — Character Builder</title>
   <meta name="description" content="An open-source character builder and digital sheet for the 5th edition SRD (2024 rules).">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E%E2%9A%9C%3C/text%3E%3C/svg%3E">
+  <link rel="icon" type="image/png" href="img/logo/icon-64.png">
+  <link rel="apple-touch-icon" href="img/logo/apple-touch-icon.png">
   <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
   <header class="appbar">
-    <a class="brand" href="#home"><span class="brand-mark">∞</span> DND Infinite</a>
+    <a class="brand" href="#home" aria-label="Infinity Codex home"><img class="brand-symbol" src="img/logo/symbol-480.png" alt="Infinity Codex"></a>
     <nav class="topnav"></nav>
   </header>
   <main id="app"><p class="muted center">Loading…</p></main>
   <footer class="appfooter">
+    <span class="foot-diamond" aria-hidden="true"></span>
+    <div class="foot-text">
     Open source under the MIT License. Game rules from the System Reference Document 5.2 by Wizards of the Coast LLC, licensed under
-    <a href="https://creativecommons.org/licenses/by/4.0/legalcode">CC-BY-4.0</a>. Optional content packs are Open Game Content (OGL 1.0a) or CC-BY-4.0; see <a href="LICENSES/OGL-1.0a.txt">the OGL notice</a>. DND Infinite is an unofficial fan project, not affiliated with or endorsed by Wizards of the Coast. Dungeons &amp; Dragons and D&amp;D are trademarks of Wizards of the Coast.
+    <a href="https://creativecommons.org/licenses/by/4.0/legalcode">CC-BY-4.0</a>. Optional content packs are Open Game Content (OGL 1.0a) or CC-BY-4.0; see <a href="LICENSES/OGL-1.0a.txt">the OGL notice</a>. Infinity Codex is an unofficial fan project, not affiliated with or endorsed by Wizards of the Coast. Dungeons &amp; Dragons and D&amp;D are trademarks of Wizards of the Coast.
+    </div>
+    <a class="foot-social" href="https://github.com/Pavlov-sys/dnd-infinite" title="Infinity Codex on GitHub" aria-label="Infinity Codex on GitHub"></a>
   </footer>
-  <noscript>DND Infinite needs JavaScript enabled.</noscript>
+  <noscript>Infinity Codex needs JavaScript enabled.</noscript>
   <script>/* file-warning */
     // Browsers won't load the app's module files from a page opened straight from disk.
     if (location.protocol === 'file:') setTimeout(() => {
       const app = document.getElementById('app');
-      if (app && /Loading/.test(app.textContent)) app.innerHTML = '<div style="max-width:620px;margin:3rem auto;line-height:1.5"><h2>Open <code>dnd-infinite.html</code> instead</h2><p>Your browser won\'t run this page when it\'s opened straight from a folder. In the same folder there\'s a file called <b>dnd-infinite.html</b>: double-click that one and it works offline.</p><p>Or run a small local server in this folder (for example <code>python -m http.server 8000</code>) and visit <code>http://localhost:8000</code>.</p></div>';
+      if (app && /Loading/.test(app.textContent)) app.innerHTML = '<div style="max-width:620px;margin:3rem auto;line-height:1.5"><h2>Open <code>infinity-codex.html</code> instead</h2><p>Your browser won\'t run this page when it\'s opened straight from a folder. In the same folder there\'s a file called <b>infinity-codex.html</b>: double-click that one and it works offline.</p><p>Or run a small local server in this folder (for example <code>python -m http.server 8000</code>) and visit <code>http://localhost:8000</code>.</p></div>';
     }, 1500);
   </script>
   <script type="module" src="js/main.js"></script>

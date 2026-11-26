@@ -1,1 +1,1 @@
-{"type":"module","name":"dnd-infinite","private":true,"scripts":{"test":"node --test tests/*.test.js","start":"python3 -m http.server 8080","build":"bun tools/build-standalone.mjs"}}
+{"type":"module","name":"infinity-codex","private":true,"scripts":{"test":"node --test tests/*.test.js","start":"python3 -m http.server 8080","build":"bun tools/build-standalone.mjs"}}
