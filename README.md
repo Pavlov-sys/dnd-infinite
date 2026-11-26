@@ -33,6 +33,8 @@ Infinity Codex is a free, community-driven alternative to proprietary character 
 - **Undo** on the sheet: every change (damage, healing, slots, resources, rests, conditions, items, level-ups) can be undone step by step from the pop-up or with Ctrl+Z / Cmd+Z
 - **Level-up wizard**: shows the new features and improvements, takes average or rolled Hit Points, then lists the new choices with links into the builder; each level-up is saved so it can be rolled back
 - **Character cards** show current HP and get scuffed, scratched and bloodied below half
+- **Guide**: a searchable how-to for every feature, with direct links (`#guide-<topic>`)
+- **At the table**: one-click casting (spends the slot and rolls attack, damage and crits), a concentration tracker with the CON save on damage, ammunition that counts down and recovers half, and DRINK / THROW / USE buttons for potions and other consumables
 
 ## Running it
 

@@ -21,3 +21,8 @@ Converted from the Open5e data repository (https://github.com/open5e/open5e-api)
 - *Open5e Originals* — the Open5e project.
 
 Options written for the 2014 rules are adapted to the 2024 rules: subclass features from before level 3 are gained at level 3, species ability score increases are replaced by the background's, and older backgrounds let you pick any three abilities and any Origin feat. The Black Flag Witch and Theurge use their own spell lists in Tales of the Valiant; here they prepare spells from the closest core lists (Warlock and Sorcerer, Wizard and Cleric).
+
+## Fonts
+
+- *Noto Sans Egyptian Hieroglyphs* by Google, licensed under the SIL Open Font License 1.1 (https://openfontlicense.org). A 24-sign subset is embedded in `js/data/hieroglyph-font.js` (source file in `fonts/`).
+- The Infinity Codex wordmark is set in *Cinzel* by Natanael Gama, licensed under the SIL Open Font License 1.1.
