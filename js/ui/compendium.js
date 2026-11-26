@@ -4,6 +4,8 @@ import { all, CONDITIONS, WEAPON_MASTERIES } from '../data/index.js';
 import { spellLine } from './components.js';
 import { statBlock, crLabel } from './statblock.js';
 import { saveEntry } from './homebrew.js';
+import { renderLibrary, packColor } from './library.js';
+import { loadPacks, SRD_PACK, BUILTIN_PACKS } from '../data/index.js';
 
 /** Copy any entry into My Homebrew and open it in the editor. */
 function copyToHomebrew(kind, entry) {
@@ -12,10 +14,12 @@ function copyToHomebrew(kind, entry) {
   saveEntry(kind, { ...rest, ...(entry.cls ? { classId: entry.cls.id } : {}), id });
   location.hash = `#homebrew-edit-${kind}-${id}`;
 }
-const copyBtn = (kind, entry) => h('button.btn.small.copy-hb', { type: 'button', title: 'Make an editable copy in My Homebrew', onclick: (e) => { e.preventDefault(); e.stopPropagation(); copyToHomebrew(kind, entry); } }, '＋ Copy to My Homebrew');
+const copyBtn = (kind, entry) => h('button.btn.small.copy-hb', { type: 'button', title: 'Make an editable copy in My Homebrew', onclick: (e) => { e.preventDefault(); e.stopPropagation(); copyToHomebrew(kind, entry); } }, '＋ Copy to Homebrew');
 
-const TABS = [['spells', 'Spells'], ['monsters', 'Monsters'], ['items', 'Equipment'], ['magic', 'Magic Items'], ['classes', 'Classes'], ['subclasses', 'Subclasses'], ['species', 'Species'], ['backgrounds', 'Backgrounds'], ['feats', 'Feats'], ['rules', 'Rules']];
-let state = { tab: 'spells', q: '', level: '', cls: '', school: '', cr: '', kind: '', itype: '', rarity: '', src: '', edition: '' };
+const TABS = [['library', 'Library'], ['spells', 'Spells'], ['monsters', 'Monsters'], ['items', 'Equipment'], ['magic', 'Magic Items'], ['classes', 'Classes'], ['subclasses', 'Subclasses'], ['species', 'Species'], ['backgrounds', 'Backgrounds'], ['feats', 'Feats'], ['rules', 'Rules']];
+let state = { tab: 'library', q: '', level: '', cls: '', school: '', cr: '', kind: '', itype: '', rarity: '', src: '', edition: '', pack: '' };
+const CLEAR = { level: '', cls: '', school: '', cr: '', kind: '', itype: '', rarity: '', src: '', edition: '', pack: '', q: '' };
+const packName = (id) => (id === SRD_PACK.id ? 'Core Rules (SRD 5.2)' : loadPacks().find((p) => p.id === id)?.name || BUILTIN_PACKS.find((p) => p.id === id)?.name || (id === 'my-homebrew' ? 'My Homebrew' : id));
 
 /** Every subclass, flattened, with its parent class attached. */
 const allSubclasses = () => all('classes').flatMap((c) => (c.subclasses || []).map((s) => ({ ...s, cls: c })));
@@ -30,7 +34,13 @@ function lazy(summary, build, copy) {
 }
 const src = (e) => (e.source && e.source !== 'SRD' ? h('em.src', {}, e.source) : null);
 
-export function renderCompendium(root) {
+export function renderCompendium(root, sub) {
+  // #compendium-library and #compendium-library-<pack id> open the Library.
+  if (sub !== undefined && sub !== null) {
+    const m = sub.match(/^library(?:-(.+))?$/);
+    if (m) { state.tab = 'library'; return renderShell(root, (host) => renderLibrary(host, m[1], (tab, pack, q = '') => { state = { ...state, ...CLEAR, tab, pack, q }; location.hash = '#compendium'; })); }
+  }
+  if (state.tab === 'library') return renderShell(root, (host) => renderLibrary(host, null, (tab, pack, q = '') => { state = { ...state, ...CLEAR, tab, pack, q }; location.hash = '#compendium'; renderCompendium(root); }));
   const rerender = () => renderCompendium(root);
   const set = (patch) => { state = { ...state, ...patch }; rerender(); };
   const q = state.q.toLowerCase();
@@ -40,7 +50,7 @@ export function renderCompendium(root) {
   let list = []; let filters = [];
   const KIND = { spells: 'spells', monsters: 'monsters', items: 'items', magic: 'items', classes: 'classes', species: 'species', backgrounds: 'backgrounds', feats: 'feats' }[state.tab];
   const srcName = (e) => (e.source === 'SRD' || !e.source ? 'Core Rules (SRD 5.2)' : e.source);
-  const srcOk = (e) => !state.src || srcName(e) === state.src;
+  const srcOk = (e) => (!state.src || srcName(e) === state.src) && (!state.pack || e.packId === state.pack || (state.pack === SRD_PACK.id && (!e.source || e.source === 'SRD')));
   const pool = state.tab === 'subclasses' ? allSubclasses() : KIND ? all(KIND).filter((e) => state.tab !== 'magic' || e.type === 'magic-item') : [];
   const sourceFilter = pool.length ? filterSelect('src', 'All sources', [...new Set(pool.map(srcName))].sort().map((x) => [x, x])) : null;
 
@@ -90,12 +100,28 @@ export function renderCompendium(root) {
   const total = list.flat().length;
   root.replaceChildren(h('div.compendium', {},
     h('h1', {}, 'Compendium'),
-    h('nav.tabs', {}, TABS.map(([id, l]) => h(`button${state.tab === id ? '.on' : ''}`, { onclick: () => set({ tab: id, level: '', cls: '', school: '', cr: '', kind: '', itype: '', rarity: '', src: '', edition: '' }) }, l))),
+    tabsNav(root),
+    state.pack ? h('div.pack-filter', { style: `--pc:${packColor({ id: state.pack, color: loadPacks().find((p) => p.id === state.pack)?.color })}` },
+      h('span', {}, 'Showing only ', h('b', {}, packName(state.pack))),
+      h('a.linkish', { href: `#compendium-library-${state.pack}` }, 'Open in Library'),
+      h('button.icon-btn', { title: 'Show everything', 'aria-label': 'Show everything', onclick: () => set({ pack: '' }) }, '✕')) : null,
     h('div.filters', {},
       h('input', { type: 'search', placeholder: 'Search…', value: state.q, oninput: (e) => { state.q = e.target.value; const pos = e.target.selectionStart; rerender(); const el = root.querySelector('.filters input'); el.focus(); el.setSelectionRange(pos, pos); } }),
       filters, sourceFilter),
     state.tab !== 'rules' ? h('p.muted.tiny', {}, `${total} result${total === 1 ? '' : 's'}${total > MAX ? ` — showing the first ${MAX}; search or filter to narrow down` : ''}`) : null,
     h('div.comp-list', {}, total ? list.slice(0, MAX) : h('p.muted', {}, 'Nothing matches.'))));
+}
+function tabsNav(root) {
+  return h('nav.tabs', {}, TABS.map(([id, l]) => h(`button${state.tab === id ? '.on' : ''}${id === 'library' ? '.lib-tab' : ''}`, { onclick: () => {
+    state = { ...state, ...CLEAR, tab: id };
+    if (id === 'library') { if (location.hash !== '#compendium-library') location.hash = '#compendium-library'; else renderCompendium(root, 'library'); }
+    else if (location.hash !== '#compendium') location.hash = '#compendium'; else renderCompendium(root);
+  } }, l)));
+}
+function renderShell(root, fill) {
+  const host = h('div');
+  root.replaceChildren(h('div.compendium', {}, h('h1', {}, 'Compendium'), tabsNav(root), host));
+  fill(host);
 }
 
 function itemMeta(e) {

@@ -4,6 +4,8 @@ import { ABILITIES, SKILLS, CONDITIONS, WEAPON_MASTERIES, all, getItem, getSpell
 import { compute, fmt, XP_TABLE, advantageFor, rollKeys } from '../engine/rules.js';
 import { quickPanel, removeSpell } from './quick-edit.js';
 import { saveCharacter, exportCharacter, listCharacters } from '../engine/store.js';
+import { levelUpWizard } from './level-up.js';
+import { recordChange, undoLast, showUndo, hideUndo, undoDepth, lastLabel } from './undo.js';
 import { applyAppearance, customizeDialog } from './sheet-style.js';
 import { rollDice } from './dicelog.js';
 
@@ -87,9 +89,20 @@ export function renderSheet(root, c, go) {
   current = c;
   const rerender = () => renderSheet(root, c, go);
   closePanel = () => { if (view.panel && root.isConnected) { view.panel = null; rerender(); } };
-  const update = (fn) => { fn(c); saveCharacter(c); rerender(); };
+  // Every change goes through update(), which keeps a snapshot for Undo.
+  const update = (fn, label) => {
+    if (recordChange(c, fn, label, d.hpMax)) { saveCharacter(c); showUndo(lastLabel(), doUndo, undoDepth()); }
+    rerender();
+  };
+  const doUndo = () => {
+    const l = undoLast(c); if (!l) return;
+    saveCharacter(c); rerender();
+    if (undoDepth()) showUndo(`Undone: ${l}`, doUndo, undoDepth()); else { hideUndo(); toast(`Undone: ${l}`); }
+  };
+  sheetUndo = () => (root.isConnected ? doUndo() : null);
   const cur = c.hp.current ?? d.hpMax;
-  const d20 = (label, bonus, keys) => rollDice(label, `1d20${fmt(bonus)}`, { d20: true, adv: netAdv(keys) });
+  exPenalty = d.d20Penalty || 0;
+  const d20 = (label, bonus, keys) => { const [l, x] = withExhaustion(label, `1d20${fmt(bonus)}`, true); rollDice(l, x, { d20: true, adv: netAdv(keys) }); };
 
   // Header: portrait, name, subtitle, level / XP bar, rests
   const D = c.details || {};
@@ -103,8 +116,9 @@ export function renderSheet(root, c, go) {
       h('div', {}, h('h1', {}, c.name || 'Unnamed Adventurer', h('a.ds-manage', { href: `#build-${c.id}-class`, title: 'Open in the builder' }, 'Manage')),
         h('div.ds-sub', {}, [D.gender, d.species?.name, `${d.cls?.name || ''} ${c.level}`, d.sub ? `(${d.sub.name})` : null].filter(Boolean).join(' ')), xpBar)),
     h('div.ds-buttons', {},
+      c.level < 20 && d.cls ? h('button.ds-btn.levelup-btn', { title: `Level up to ${c.level + 1}`, onclick: () => levelUpWizard(c, update, go) }, '⬆ Level Up') : null,
       h('button.ds-btn', { onclick: () => shortRest(c, d, update) }, '⛺ Short Rest'),
-      h('button.ds-btn', { onclick: () => update((x) => longRest(x, d)) }, '☾ Long Rest'),
+      h('button.ds-btn', { onclick: () => update((x) => longRest(x, d), 'Long Rest') }, '☾ Long Rest'),
       h('button.ds-btn', { title: 'Colours, background and layout', onclick: () => customizeDialog(c, { sheetEl: () => root.querySelector('.dsheet'), listCharacters, save: (done) => { saveCharacter(c); if (done) rerender(); } }) }, '🎨 Customize'),
       h(`button.ds-btn${view.panel ? '.on' : ''}`, { title: 'Quick adjustments: numbers, proficiency, advantage, spells, items', onclick: () => { view.panel = view.panel ? null : { kind: 'adjust', arg: 'combat' }; rerender(); } }, '⚙ Adjust'),
       h('a.ds-btn', { href: `#build-${c.id}-class` }, '✎ Edit'),
@@ -214,6 +228,14 @@ let closePanel = () => {};
 let tabDir = 0;
 if (typeof document !== 'undefined') { document.addEventListener('keydown', (e) => { if (e.key === 'Tab') tabDir = e.shiftKey ? -1 : 1; }, true); document.addEventListener('keyup', () => { setTimeout(() => { tabDir = 0; }, 0); }, true); }
 if (typeof document !== 'undefined') document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !document.querySelector('.modal-backdrop, dialog[open]')) closePanel(); });
+// Ctrl+Z / Cmd+Z on the sheet undoes the last change (text boxes keep their own undo).
+let sheetUndo = () => null;
+if (typeof document !== 'undefined') {
+  document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z' && !e.target.closest?.('input, textarea, [contenteditable], .modal-backdrop') && location.hash.startsWith('#sheet-')) { e.preventDefault(); sheetUndo(); }
+  });
+  window.addEventListener('hashchange', hideUndo);
+}
 const netAdv = (keys) => { if (!current || !keys) return 0; const a = advantageFor(current, keys); return Math.sign(a.adv.length) - Math.sign(a.dis.length); };
 /** A/D badge for a roll, if any entry applies. */
 const advBadge = (keys) => {
@@ -221,7 +243,10 @@ const advBadge = (keys) => {
   const tip = [...a.adv.map((x) => `Advantage${x.note ? `: ${x.note}` : ''}`), ...a.dis.map((x) => `Disadvantage${x.note ? `: ${x.note}` : ''}`)].join('\n');
   return a.adv.length && a.dis.length ? h('span.adv.both', { title: `${tip}\n(they cancel out)` }, 'A/D') : h(`span.adv${a.dis.length ? '.dis' : ''}`, { title: tip }, a.dis.length ? 'D' : 'A');
 };
-const rollBtn = (label, expr, text, opts = {}) => h('button.ds-roll', { onclick: (e) => { e.stopPropagation(); rollDice(label, expr, { ...opts, adv: netAdv(opts.keys) }); } }, text ?? expr, opts.keys ? advBadge(opts.keys) : null);
+// Exhaustion takes 2 per level off every D20 Test rolled from the sheet.
+let exPenalty = 0;
+const withExhaustion = (label, expr, d20) => (d20 && exPenalty ? [`${label} (Exhaustion −${exPenalty})`, `${expr}-${exPenalty}`] : [label, expr]);
+const rollBtn = (label, expr, text, opts = {}) => h('button.ds-roll', { onclick: (e) => { e.stopPropagation(); const [l, x] = withExhaustion(label, expr, opts.d20); rollDice(l, x, { ...opts, adv: netAdv(opts.keys) }); } }, text ?? expr, opts.keys ? advBadge(opts.keys) : null);
 /** Small gear on a panel caption that opens the quick-edit side panel. */
 const gear = (title, panel, rerender) => h('button.ds-gear', { title, onclick: (e) => { e.stopPropagation(); view.panel = panel; rerender(); } }, '⚙');
 const adjMark = (d, key) => (d.adjusted?.has(key) ? h('i.adj-dot', { title: 'Adjusted by hand (⚙ to change)' }) : null);
@@ -312,7 +337,7 @@ function actionsTab(c, d, update, rerender) {
     section('action', 'ACTIONS', `Attacks per Action: ${d.attacksPerAction}`, [
       attackRows(c, d),
       block('Actions in Combat', h('p.combat-list', {}, COMBAT_ACTIONS.map(([n, t], i) => [i ? ', ' : '', h('span.tip', { title: t }, n)]))),
-      h('div.act-feature', {}, h('div.af-head', {}, h('b', {}, 'Unarmed Strike')), h('div.af-text', {}, rich(`You make a melee attack that involves using your body to deal one of the following effects:\n\n**Damage.** Make an attack roll; on a hit, you deal ${Math.max(1, 1 + d.mods.str)} Bludgeoning damage (1 + STR).\n\n**Grapple.** The target must succeed on a STR or DEX saving throw (it chooses) against DC ${8 + d.pb + d.mods.str} (8 + PB + STR) or have the Grappled condition.\n\n**Shove.** The target must succeed on a STR or DEX saving throw against DC ${8 + d.pb + d.mods.str} or you push it 5 ft away or knock it Prone.`))),
+      h('div.act-feature', {}, h('div.af-head', {}, h('b', {}, 'Unarmed Strike')), h('div.af-text', {}, rich(`You make a melee attack that involves using your body to deal one of the following effects:\n\n**Damage.** Make an attack roll; on a hit, you deal ${Math.max(0, 1 + d.mods.str)} Bludgeoning damage (1 + STR).\n\n**Grapple.** The target must succeed on a STR or DEX saving throw (it chooses) against DC ${8 + d.pb + d.mods.str} (8 + PB + STR) or have the Grappled condition.\n\n**Shove.** The target must succeed on a STR or DEX saving throw against DC ${8 + d.pb + d.mods.str} or you push it 5 ft away or knock it Prone.`))),
       spellLine(spellsOf('action').filter((e) => !(spellDamage(e.sp, c.level, d) && (e.sp.attack || spellSave(e.sp))))),
       featuresOf('action').map((f) => featureBlock(f, c, d, update)),
       extraActionsOf('action'),
@@ -488,7 +513,7 @@ function deathSaves(c, update) {
   const pips = (key, label) => h('div.ds-row', {}, h('span', {}, label), [0, 1, 2].map((i) => h(`button.pip${c.deathSaves[key] > i ? '.on' : ''}.${key}`, { onclick: () => update((x) => { x.deathSaves[key] = x.deathSaves[key] > i ? i : i + 1; }) })));
   return h('div.death-saves', {}, h('strong', {}, 'Death Saves'), pips('success', 'Successes'), pips('fail', 'Failures'),
     h('button.btn.small', { onclick: () => {
-      const r = rollDice('Death Save', '1d20', { d20: true, adv: netAdv(rollKeys.death()) }); const v = r.parts[0].kept[0];
+      const [dl, dx] = withExhaustion('Death Save', '1d20', true); const r = rollDice(dl, dx, { d20: true, adv: netAdv(rollKeys.death()) }); const v = r.parts[0].kept[0];
       update((x) => { if (v === 20) { x.hp.current = 1; x.deathSaves = { success: 0, fail: 0 }; } else if (v === 1) x.deathSaves.fail = Math.min(3, x.deathSaves.fail + 2); else if (v >= 10) x.deathSaves.success = Math.min(3, x.deathSaves.success + 1); else x.deathSaves.fail = Math.min(3, x.deathSaves.fail + 1); });
     } }, 'Roll death save'));
 }
@@ -496,7 +521,8 @@ function deathSaves(c, update) {
 function inventoryTab(c, d, update, rerender) {
   const coins = Object.values(c.currency).reduce((a, b) => a + (Number(b) || 0), 0);
   const weight = d.inventory.reduce((s, e) => s + (e.item.weight || 0) * e.qty, 0) + (c.settings.ignoreCoinWeight === false ? coins / 50 : 0);
-  const capacity = d.scores.str * 15;
+  // Carrying capacity (2024): STR x 15 lb, halved for Tiny and doubled per size above Medium.
+  const capacity = d.scores.str * 15 * ({ Tiny: 0.5, Large: 2, Huge: 4, Gargantuan: 8 }[d.size] || 1);
   const catalog = all('items').sort((a, b) => a.name.localeCompare(b.name));
   const equippable = (it) => it.type === 'armor' || it.type === 'weapon';
   return [
@@ -526,12 +552,14 @@ const itemDesc = (it) => it.type === 'weapon' ? `${cap(it.category)} ${it.kind} 
     : it.type === 'magic-item' ? `${it.subtitle || it.category || 'Magic item'} · ${it.rarity}${it.attunement ? ' · requires attunement' : ''}. ${it.desc}` : it.desc || '';
 
 function conditionsDialog(c, update) {
+  // Edit a copy and apply it on Done, so the whole change is one Undo step.
+  let conds = [...c.conditions]; let ex = c.exhaustion;
   const body = h('div.cond-list', {}, CONDITIONS.filter((x) => x.id !== 'exhaustion').map((cond) => h('label.cond', {},
-    h('input', { type: 'checkbox', checked: c.conditions.includes(cond.id), onchange: (e) => { c.conditions = e.target.checked ? [...c.conditions, cond.id] : c.conditions.filter((x) => x !== cond.id); } }),
+    h('input', { type: 'checkbox', checked: conds.includes(cond.id), onchange: (e) => { conds = e.target.checked ? [...conds, cond.id] : conds.filter((x) => x !== cond.id); } }),
     h('div', {}, h('b', {}, cond.name), h('div.muted.tiny', {}, cond.desc)))),
   h('label.cond', {}, h('div', {}, h('b', {}, 'Exhaustion level'), h('div.muted.tiny', {}, CONDITIONS.find((x) => x.id === 'exhaustion').desc)),
-    h('input.num', { type: 'number', min: 0, max: 6, value: c.exhaustion, onchange: (e) => { c.exhaustion = Math.max(0, Math.min(6, Number(e.target.value) || 0)); } })));
-  modal('Conditions', body, [{ label: 'Done', primary: true, onClick: () => update(() => {}) }]);
+    h('input.num', { type: 'number', min: 0, max: 6, value: ex, onchange: (e) => { ex = Math.max(0, Math.min(6, Number(e.target.value) || 0)); } })));
+  modal('Conditions', body, [{ label: 'Done', primary: true, onClick: () => update((x) => { x.conditions = conds; x.exhaustion = ex; }) }]);
 }
 
 function shortRest(c, d, update) {

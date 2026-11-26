@@ -67,7 +67,14 @@ function write() {
   try { localStorage.setItem(KEY, JSON.stringify(cache)); } catch { /* storage unavailable: keep in memory */ }
 }
 
-export const listCharacters = () => [...read()].sort((a, b) => b.updated - a.updated);
+// Most recently used first: opening a sheet or the builder counts as use, and so does any change.
+const lastUse = (c) => Math.max(c.lastUsed || 0, c.updated || 0, c.created || 0);
+export const listCharacters = () => [...read()].sort((a, b) => lastUse(b) - lastUse(a));
+/** Note that a character was just opened (without counting it as an edit). */
+export function markUsed(id) {
+  const c = read().find((x) => x.id === id); if (!c) return;
+  c.lastUsed = Date.now(); write();
+}
 export const getCharacter = (id) => read().find((c) => c.id === id) || null;
 export function saveCharacter(c) {
   c.updated = Date.now();

@@ -201,7 +201,9 @@ function computeBase(c) {
   const saveProfs = new Set(cls?.saves || []);
   if (cls?.id === 'monk' && level >= 14) ABILITIES.forEach((a) => saveProfs.add(a.id));
   if (cls?.id === 'rogue' && level >= 15) { saveProfs.add('wis'); saveProfs.add('cha'); }
-  const saves = Object.fromEntries(ABILITIES.map((a) => [a.id, { prof: saveProfs.has(a.id), mod: mods[a.id] + (saveProfs.has(a.id) ? pb : 0) }]));
+  // Paladin Aura of Protection (level 6+): the paladin adds its CHA modifier (min +1) to its own saves too.
+  const aura = cls?.id === 'paladin' && level >= 6 ? Math.max(1, mods.cha) : 0;
+  const saves = Object.fromEntries(ABILITIES.map((a) => [a.id, { prof: saveProfs.has(a.id), mod: mods[a.id] + (saveProfs.has(a.id) ? pb : 0) + aura }]));
 
   // Inventory
   const inv = (c.inventory || []).map((e, idx) => {
@@ -224,7 +226,7 @@ function computeBase(c) {
   } else if (unarmored && !(cls?.id === 'monk' && shield)) {
     ac = 10 + mods.dex + mods[unarmored]; acNote = `Unarmored Defense (10 + DEX + ${unarmored.toUpperCase()})`;
   }
-  if (shield) { ac += 2; acNote += ' + Shield'; }
+  if (shield) { const sb = Number(shield.item.ac) || 2; ac += sb; acNote += sb === 2 ? ' + Shield' : ` + Shield (+${sb})`; }
   if (c.acBonus) ac += Number(c.acBonus) || 0;
 
   // Hit Points
@@ -246,13 +248,17 @@ function computeBase(c) {
   if (cls?.id === 'monk' && level >= 2 && !armor && !shield) speed += valueAt([0, 10, 10, 10, 10, 15, 15, 15, 15, 20, 20, 20, 20, 25, 25, 25, 25, 30, 30, 30], level);
   if (cls?.id === 'ranger' && level >= 6 && !heavy) speed += 10;
   if (armor?.item.strReq && scores.str < armor.item.strReq) speed -= 10;
+  // Exhaustion (2024): Speed drops by 5 ft per level, and D20 Tests take -2 per level (applied when rolling).
+  const exhaustion = Math.max(0, Math.min(6, Number(c.exhaustion) || 0));
+  speed = Math.max(0, speed - 5 * exhaustion);
   const darkvision = lineage?.darkvision || species?.darkvision || 0;
   const resist = [...new Set([...(species?.resist || []), ...(c.extras?.resist || [])])];
   const anc = speciesOpt('ancestry');
   if (anc?.resist) resist.push(anc.resist);
   if (lineage?.resist) resist.push(lineage.resist);
 
-  const initiative = mods.dex + (hasFeat('alert') ? pb : 0);
+  // Alert, or any (homebrew) feat marked as adding Proficiency Bonus to Initiative.
+  const initiative = mods.dex + (feats.some((f) => f.featId === 'alert' || f.feat?.effects?.initiativeProf) ? pb : 0);
 
   // Spellcasting
   let spellcasting = null;
@@ -261,6 +267,7 @@ function computeBase(c) {
     let slots = []; let pact = null;
     if (k.type === 'full') slots = FULL_CASTER_SLOTS[level - 1];
     if (k.type === 'half') slots = FULL_CASTER_SLOTS[Math.ceil(level / 2) - 1];
+    if (k.type === 'third') slots = level >= 3 ? FULL_CASTER_SLOTS[Math.ceil(level / 3) - 1] : [];
     if (k.type === 'pact') { const [n, lv] = PACT_SLOTS[level - 1]; pact = { count: n, level: lv }; }
     const maxSpellLevel = pact ? pact.level : slots.length;
     spellcasting = {
@@ -310,7 +317,7 @@ function computeBase(c) {
     });
   }
   const unarmedAb = monkDie && mods.dex > mods.str ? 'dex' : 'str';
-  attacks.push({ name: 'Unarmed Strike', bonus: mods[unarmedAb] + pb, damage: monkDie ? `1d${monkDie}${fmt(mods[unarmedAb])}` : `${Math.max(1, 1 + mods.str)}`, dtype: 'bludgeoning', props: [], range: '5 ft', prof: true, kind: 'melee', unarmed: true });
+  attacks.push({ name: 'Unarmed Strike', bonus: mods[unarmedAb] + pb, damage: monkDie ? `1d${monkDie}${fmt(mods[unarmedAb])}` : `${Math.max(0, 1 + mods.str)}`, dtype: 'bludgeoning', props: [], range: '5 ft', prof: true, kind: 'melee', unarmed: true });
 
   // Features
   const features = [];
@@ -332,7 +339,7 @@ function computeBase(c) {
   const resources = [...(cls?.resources || []), ...(sub?.resources || []), ...(c.extras?.resources || [])].map((r) => {
     let max = r.uses;
     if (Array.isArray(max)) max = valueAt(max, level);
-    else if (typeof max === 'string') max = max === 'level' ? level : max === '5*level' ? 5 * level : Math.max(1, mods[max] ?? 1);
+    else if (typeof max === 'string') max = max === 'level' ? level : max === '5*level' ? 5 * level : max === 'pb' ? pb : /^\d+$/.test(max) ? Number(max) : Math.max(1, mods[max] ?? 1);
     return { ...r, max };
   }).filter((r) => r.max > 0);
   if (species?.id === 'dragonborn') resources.push({ id: 'breath-weapon', name: 'Breath Weapon', reset: 'long', max: pb });
@@ -357,7 +364,7 @@ function computeBase(c) {
     passiveInsight: 10 + skills.insight.mod, passiveInvestigation: 10 + skills.investigation.mod,
     proficiencies: { armor: armorProf, weapons: weaponProf, tools, languages },
     feats, features, spellcasting, grantedSpells, spellDetail, attacks, attacksPerAction, resources, inventory: inv, warnings,
-    spellDamageBonus, defenses: c.extras?.defenses || [], saveNotes: c.extras?.saveNotes || [],
+    exhaustion, d20Penalty: 2 * exhaustion, spellDamageBonus, defenses: c.extras?.defenses || [], saveNotes: [...(aura ? [`Includes +${aura} from Aura of Protection (while not Incapacitated)`] : []), ...(c.extras?.saveNotes || [])],
     actionKinds: c.extras?.actionKinds || {}, extraActions: c.extras?.actions || [],
   };
 }

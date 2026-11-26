@@ -1,5 +1,5 @@
 // D&D Beyond character importer. Reads the fillable PDF that D&D Beyond exports ("Export to PDF")
-// and rebuilds the character as DND Infinite choices, matched against the content you have enabled.
+// and rebuilds the character as Infinity Codex choices, matched against the content you have enabled.
 // Anything that can't be matched is listed in the report and saved in the character's notes,
 // so the sheet still shows the same numbers as the original.
 import { all, getClass, getFeat, getBackground, getSpecies, getSpell, getItem, SKILLS, ABILITIES, FULL_CASTER_SLOTS, setTransientPacks, loadPacks, savePacks } from '../data/index.js';
@@ -149,7 +149,7 @@ const proficiencyLists = (text) => {
 
 // ------------------------------------------------------------------ main conversion
 /**
- * Convert D&D Beyond PDF fields into a DND Infinite character.
+ * Convert D&D Beyond PDF fields into an Infinity Codex character.
  * Returns { character, report } where report = { name, summary, matched, approx, missing, diffs, warnings }.
  */
 function convert(rawFields, { now = new Date(), collect = false } = {}) {
@@ -693,7 +693,7 @@ function buildPlaceholders(ctx) {
 }
 
 /**
- * Convert D&D Beyond PDF fields into a DND Infinite character. Anything not in your content becomes a
+ * Convert D&D Beyond PDF fields into an Infinity Codex character. Anything not in your content becomes a
  * placeholder (returned as `placeholders`, pass it to commitPlaceholders when the user confirms).
  */
 export function fromDdbFields(rawFields, { now = new Date(), placeholders = true } = {}) {

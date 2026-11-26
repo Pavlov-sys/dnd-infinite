@@ -1,13 +1,15 @@
 // Sheet customization: light/dark mode, accent colour, panel opacity, frame style, text size and
 // backgrounds (built-in presets or an uploaded image). Settings live on the character (c.appearance);
 // uploaded images are stored in IndexedDB (falling back to localStorage), referenced by id.
+import { tintOf } from './class-tint.js';
+import { getClass } from '../data/index.js';
 import { h, modal, toast } from './dom.js';
 
 export const RECOMMENDED = { width: 2560, height: 1440, min: { width: 1920, height: 1080 } };
 const MAX_EDGE = 2560; // uploads are scaled down to this so they stay small in storage
 
 export const APPEARANCE_DEFAULT = {
-  mode: 'dark', accent: '#c53131', panelOpacity: 92, frame: 'ornate', textSize: 'normal', fullPage: true,
+  mode: 'dark', accent: '#c53131', panelOpacity: 92, frame: 'ornate', frameColor: 'class', textSize: 'normal', fullPage: true,
   background: { kind: 'preset', preset: 'frost', imageId: null, dim: 30, blur: 0, focus: 'center', imageInfo: null },
 };
 
@@ -74,6 +76,26 @@ export async function imageURL(id) {
   if (url) urlCache.set(id, url);
   return url;
 }
+/** Every stored image as [id, data URL] pairs (for backups). */
+export async function allImages() {
+  const out = [];
+  try {
+    const d = await db();
+    await new Promise((res, rej) => {
+      const tx = d.transaction(STORE, 'readonly'); const req = tx.objectStore(STORE).openCursor();
+      req.onsuccess = () => { const cur = req.result; if (cur) { out.push([cur.key, cur.value]); cur.continue(); } };
+      tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+    });
+  } catch { /* no IndexedDB: images live in localStorage and are backed up with it */ }
+  const toURL = (blob) => new Promise((r) => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob); });
+  return Promise.all(out.map(async ([id, v]) => [id, typeof v === 'string' ? v : await toURL(v)]));
+}
+/** Put an image back under its original id (restoring a backup). */
+export async function restoreImage(id, dataURL) {
+  const blob = await (await fetch(dataURL)).blob();
+  try { await idb('readwrite', (s) => s.put(blob, id)); } catch { localStorage.setItem(`qw.img.${id}`, dataURL); }
+  urlCache.delete(id);
+}
 export async function deleteImage(id) {
   if (!id) return;
   try { await idb('readwrite', (s) => s.delete(id)); } catch { /* ignore */ }
@@ -108,6 +130,13 @@ export function qualityNote(info) {
 }
 
 // ------------------------------------------------------------------ applying to the page
+/** The frame colour as a hex, or null for the theme's neutral grey. */
+export function frameColorOf(a, c) {
+  const v = a.frameColor ?? 'class';
+  if (v === 'neutral') return null;
+  if (v === 'class') return tintOf(getClass(c.classId));
+  return /^#[0-9a-f]{6}$/i.test(v) ? v : null;
+}
 const hexToRgb = (hex) => { const m = String(hex).replace('#', '').match(/^([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i); return m ? m.slice(1).map((x) => parseInt(x, 16)) : [197, 49, 49]; };
 
 /** Apply a character's appearance to the sheet element (and the page behind it when fullPage is on). */
@@ -118,6 +147,10 @@ export function applyAppearance(el, c) {
   el.classList.remove('text-small', 'text-normal', 'text-large'); el.classList.add(`text-${a.textSize}`);
   const [r, g, b] = hexToRgb(a.accent);
   el.style.setProperty('--ds-accent', a.accent);
+  // Box frames: the class colour (as on the character card) unless the player picked another.
+  const fc = frameColorOf(a, c);
+  if (fc) { const [fr, fg, fb] = hexToRgb(fc); el.style.setProperty('--ds-frame', fc); el.style.setProperty('--ds-frame-soft', `rgba(${fr}, ${fg}, ${fb}, .45)`); }
+  else { el.style.removeProperty('--ds-frame'); el.style.removeProperty('--ds-frame-soft'); }
   el.style.setProperty('--ds-accent-rgb', `${r}, ${g}, ${b}`);
   const op = Math.max(40, Math.min(100, a.panelOpacity)) / 100;
   el.style.setProperty('--ds-panel', a.mode === 'light' ? `rgba(255, 253, 248, ${op})` : `rgba(24, 28, 33, ${op})`);
@@ -209,6 +242,12 @@ export function customizeDialog(c, { save, sheetEl, listCharacters }) {
       h('section', {}, h('h4', {}, 'Panels & text'),
         slider('Panel opacity', a.panelOpacity, 40, 100, '%', (v) => { a.panelOpacity = v; }, 'Lower it to let more of the background show through.'),
         h('div.cz-row', {}, h('span', {}, 'Frames'), seg([['ornate', 'Ornate'], ['simple', 'Simple'], ['none', 'None']], a.frame, (v) => { a.frame = v; })),
+        h('div.cz-row', {}, h('span', {}, 'Frame colour'),
+          h('div.swatches', {},
+            h(`button.sw.sw-label${(a.frameColor ?? 'class') === 'class' ? '.on' : ''}`, { type: 'button', title: 'The character’s class colour, as on its card', style: `background:${tintOf(getClass(c.classId))}`, onclick: () => { a.frameColor = 'class'; commit(); draw(); } }, 'Class'),
+            h(`button.sw.sw-label${a.frameColor === 'neutral' ? '.on' : ''}`, { type: 'button', title: 'Neutral grey', style: `background:${a.mode === 'light' ? '#8f8574' : '#8b939d'}`, onclick: () => { a.frameColor = 'neutral'; commit(); draw(); } }, 'Grey'),
+            ACCENTS.map(([hex, name]) => h(`button.sw${String(a.frameColor).toLowerCase() === hex ? '.on' : ''}`, { type: 'button', title: name, style: `background:${hex}`, onclick: () => { a.frameColor = hex; commit(); draw(); } })),
+            h('label.sw.custom', { title: 'Custom colour' }, h('input', { type: 'color', value: /^#/.test(a.frameColor || '') ? a.frameColor : tintOf(getClass(c.classId)), oninput: (e) => { a.frameColor = e.target.value; commit(); } })))),
         h('div.cz-row', {}, h('span', {}, 'Text size'), seg([['small', 'Small'], ['normal', 'Normal'], ['large', 'Large']], a.textSize, (v) => { a.textSize = v; })),
         h('div.cz-row', {}, h('span', {}, 'Ability boxes'), seg([['modifiers', 'Modifier big'], ['scores', 'Score big']], c.settings.abilityDisplay === 'scores' ? 'scores' : 'modifiers', (v) => { c.settings.abilityDisplay = v; }))),
       fileInput);

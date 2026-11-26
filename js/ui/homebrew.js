@@ -1,9 +1,12 @@
-// Homebrew: a form-based editor for your own content (saved in a personal "My Homebrew" pack),
-// plus importing, exporting and toggling content packs. Everything stays in this browser.
+// Homebrew: a form-based editor for your own content, organised into packs you create here
+// ("My Homebrew" is the default one). Packs are shared as .json files and shown in Compendium → Library.
+// Everything stays in this browser.
 import { h, cap, modal, toast, copyText, downloadText, confirmDialog, rich } from './dom.js';
 import { parseImport, summarize, mergeInto, parseText } from '../engine/importers.js';
 import { loadPacks, savePacks, validatePack, SRD_PACK, all, getClass, rebuild, ABILITIES, SKILLS, BUILTIN_PACKS, isBuiltinEnabled, setBuiltinEnabled } from '../data/index.js';
 import { statBlock } from './statblock.js';
+import { packCover, PACK_COLORS, packColor, exportablePack, countLabel } from './library.js';
+import { stepsFor, renderStep, missingIn, START_TEXT, CLASS_FIELDS, NEW_CLASS, classToDraft, draftToClass } from './hb-builder.js';
 
 const MY = 'my-homebrew';
 const DAMAGE = ['acid', 'bludgeoning', 'cold', 'fire', 'force', 'lightning', 'necrotic', 'piercing', 'poison', 'psychic', 'radiant', 'slashing', 'thunder'];
@@ -104,11 +107,12 @@ export const TYPES = {
     { k: 'bonusActions', label: 'Bonus Actions', ...rowsOf(ACTION_ROW), add: 'Add bonus action' }, { k: 'reactions', label: 'Reactions', ...rowsOf(ACTION_ROW), add: 'Add reaction' },
     { k: 'legendary', label: 'Legendary Actions', ...rowsOf(ACTION_ROW), add: 'Add legendary action' },
   ] },
-  classes: { label: 'Class (advanced, JSON)', icon: '⚔', json: true },
+  classes: { label: 'Class', icon: '⚔', fields: CLASS_FIELDS },
 };
 
 // Converts the editor's flat form values into the content schema the app uses (and back).
 const toEntry = {
+  classes: (d) => draftToClass(d),
   backgrounds: (d) => ({ id: d.id, name: d.name, desc: d.desc || '', abilities: d.abilities || [], skills: d.skills || [], tool: d.tool || '',
     feat: { id: d.featId || 'skilled', ...(d.featId === 'magic-initiate' ? { list: d.featList || 'wizard' } : {}) },
     equipment: [{ id: 'A', label: 'Gear', items: (d.kit || []).filter((r) => r.item).map((r) => [r.item, Number(r.qty) || 1]), gp: Number(d.kitGp) || 0 }, { id: 'B', label: 'Gold', items: [], gp: 50 }] }),
@@ -126,77 +130,179 @@ const toEntry = {
 };
 const clean = (e) => { const { source, packId, sourceName, ...rest } = e; return rest; };
 const fromEntry = {
+  classes: (e) => classToDraft(e),
   feats: (e) => ({ ...e, text: e.text || e.desc, plusOne: e.plusOne ?? (() => { const c = (e.choices || []).find((x) => x.type === 'ability-plus1'); return c ? (c.options === 'any' || c.options?.length >= 6 ? 'any' : c.options.join(',')) : undefined; })(),
     skillCount: e.skillCount ?? (e.choices || []).find((x) => x.type === 'skill')?.count, initiativeProf: e.initiativeProf ?? !!e.effects?.initiativeProf }),
   backgrounds: (e) => ({ ...e, featId: e.feat?.id, featList: e.feat?.list, kit: (e.equipment?.[0]?.items || []).map(([item, qty]) => ({ item, qty })), kitGp: e.equipment?.[0]?.gp }),
 };
 
 // ---------------------------------------------------------------- storage helpers
+// A pack you made here has own: true (My Homebrew always counts as yours). Imported packs are read-only.
+const isOwn = (p) => p.own || p.id === MY;
+const defaultMy = () => ({ id: MY, name: 'My Homebrew', version: '1.0.0', author: '', enabled: true, own: true, content: {} });
+export function ownPacks() {
+  const packs = loadPacks().filter(isOwn);
+  if (!packs.some((p) => p.id === MY)) packs.unshift(defaultMy());
+  return packs.sort((a, b) => (a.id === MY ? -1 : b.id === MY ? 1 : a.name.localeCompare(b.name)));
+}
 function myPack() {
   const packs = loadPacks();
-  const p = packs.find((x) => x.id === MY) || { id: MY, name: 'My Homebrew', version: '1.0.0', author: '', enabled: true, content: {} };
+  const p = packs.find((x) => x.id === MY) || defaultMy();
   return { packs, p };
 }
 function writeMy(p, packs) { savePacks([...packs.filter((x) => x.id !== MY), p]); rebuild(); }
-export function saveEntry(type, entry, oldId) {
-  const { packs, p } = myPack();
-  const list = (p.content[type] ||= []);
-  const i = list.findIndex((e) => e.id === (oldId || entry.id));
+/** Which of your packs holds this entry. */
+export function packOf(type, id) { return ownPacks().find((p) => (p.content[type] || []).some((e) => e.id === id)); }
+// The pack new entries go into: the one you last picked.
+let activePack = (() => { try { return sessionStorage.getItem('qw.hbpack') || MY; } catch { return MY; } })();
+const setActive = (id) => { activePack = id; try { sessionStorage.setItem('qw.hbpack', id); } catch { /* ignore */ } };
+/** Save an entry into one of your packs (moving it there if it lived in another of your packs). */
+export function saveEntry(type, entry, oldId, packId) {
+  const packs = loadPacks();
+  if (!packs.some((p) => p.id === MY)) packs.push(defaultMy());
+  const findId = oldId || entry.id;
+  const from = packs.find((p) => isOwn(p) && (p.content[type] || []).some((e) => e.id === findId));
+  const target = packs.find((p) => p.id === (packId || from?.id || activePack) && isOwn(p)) || packs.find((p) => p.id === MY);
+  if (from && from !== target) from.content[type] = from.content[type].filter((e) => e.id !== findId);
+  const list = (target.content[type] ||= []);
+  const i = list.findIndex((e) => e.id === findId);
   if (i >= 0) list[i] = entry; else list.push(entry);
-  writeMy(p, packs);
+  target.updated = new Date().toISOString();
+  savePacks(packs); rebuild();
 }
 function deleteEntry(type, id) {
-  const { packs, p } = myPack();
-  p.content[type] = (p.content[type] || []).filter((e) => e.id !== id);
-  writeMy(p, packs);
+  const packs = loadPacks();
+  for (const p of packs) if (isOwn(p) && p.content[type]) p.content[type] = p.content[type].filter((e) => e.id !== id);
+  savePacks(packs); rebuild();
+}
+function moveEntry(type, id, toId) {
+  const e = ownPacks().flatMap((p) => p.content[type] || []).find((x) => x.id === id);
+  if (e) saveEntry(type, e, id, toId);
+}
+/** Create or update one of your packs' details. */
+export function savePackMeta(meta, oldId) {
+  const packs = loadPacks();
+  const ex = packs.find((p) => p.id === (oldId || meta.id));
+  if (ex) Object.assign(ex, meta, { id: ex.id, updated: new Date().toISOString() });
+  else {
+    let id = slug(meta.name) || 'pack';
+    while (packs.some((p) => p.id === id) || id === MY) id = `${slug(meta.name) || 'pack'}-${Math.random().toString(36).slice(2, 6)}`;
+    packs.push({ ...meta, id, own: true, enabled: true, content: {}, created: new Date().toISOString() });
+    savePacks(packs); rebuild(); return id;
+  }
+  savePacks(packs); rebuild(); return ex.id;
+}
+/** Dialog: name a new pack, or change a pack's details. */
+export function packDialog(existing, done) {
+  const m = { name: '', author: '', version: '1.0.0', description: '', license: '', color: PACK_COLORS[Math.floor(Math.random() * PACK_COLORS.length)], ...(existing ? structuredClone(existing) : {}) };
+  delete m.content;
+  const cover = h('div.pd-cover');
+  const drawCover = () => cover.replaceChildren(packCover({ ...m, content: existing?.content || {} }, { small: true }));
+  const f = (key, label, ph, tag = 'input') => h('div.field', {}, h('label', {}, label), h(tag, { value: m[key] || '', placeholder: ph || '', rows: tag === 'textarea' ? 3 : undefined, oninput: (ev) => { m[key] = ev.target.value; drawCover(); } }, tag === 'textarea' ? m[key] || '' : undefined));
+  const swatches = h('div.pd-swatches', {}, PACK_COLORS.map((c) => h(`button.pd-sw${packColor(m) === c ? '.on' : ''}`, { type: 'button', title: c, style: `background:${c}`, 'aria-label': `Cover colour ${c}`, onclick: (ev) => { m.color = c; swatches.querySelectorAll('.pd-sw').forEach((b) => b.classList.toggle('on', b === ev.currentTarget)); drawCover(); } })));
+  // Cover image: cropped to 3:4 and stored in the pack, so it travels with the shared .json file.
+  const fileIn = h('input', { type: 'file', accept: 'image/*', hidden: true, onchange: async (ev) => {
+    const f = ev.target.files[0]; if (!f) return;
+    try { const r = await coverFromFile(f); m.cover = r.url; coverNote.textContent = r.note; drawCover(); drawImgBtns(); } catch { toast('That image could not be read'); }
+    ev.target.value = '';
+  } });
+  const coverNote = h('p.muted.tiny', {}, `Recommended: ${COVER_W} × ${COVER_H} px or larger, portrait (3:4). Other shapes are cropped to fit. JPG, PNG or WebP.`);
+  const imgBtns = h('div.row');
+  const drawImgBtns = () => imgBtns.replaceChildren(
+    h('button.btn.small', { type: 'button', onclick: () => fileIn.click() }, m.cover ? 'Change image…' : '⇪ Upload image…'),
+    m.cover ? h('button.btn.small', { type: 'button', onclick: () => { delete m.cover; drawCover(); drawImgBtns(); } }, 'Remove image') : null,
+    m.cover ? h('label.tiny', {}, h('input', { type: 'checkbox', checked: m.coverTitle !== false, onchange: (ev) => { m.coverTitle = ev.target.checked; drawCover(); } }), ' Show the name on the cover') : null);
+  drawImgBtns();
+  drawCover();
+  modal(existing ? 'Pack details' : 'New homebrew pack', h('div.pack-dialog', {},
+    h('div', {}, f('name', 'Pack name', 'e.g. Ashes of the North'), h('div.grid2', {}, f('author', 'Author', 'Your name'), f('version', 'Version', '1.0.0')),
+      f('description', 'Description', 'What’s inside, in a sentence or two', 'textarea'), f('license', 'License (optional)', 'e.g. CC-BY-4.0'),
+      h('div.field', {}, h('label', {}, 'Cover image (optional)'), imgBtns, fileIn, coverNote),
+      h('div.field', {}, h('label', {}, 'Cover colour'), swatches)),
+    cover),
+  [{ label: 'Cancel' }, { label: existing ? 'Save' : 'Create pack', primary: true, onClick: () => {
+    if (!m.name.trim()) { toast('Give the pack a name'); return false; }
+    const id = savePackMeta({ ...m, name: m.name.trim() }, existing?.id);
+    if (!existing) setActive(id);
+    toast(existing ? 'Pack saved' : `Created “${m.name.trim()}”`); done?.(id); return true;
+  } }]);
+}
+const COVER_W = 600; const COVER_H = 800;
+/** Read an image file, crop it to 3:4 from the centre and shrink it to 600×800 JPEG. */
+function coverFromFile(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file); const img = new Image();
+    img.onload = () => {
+      const want = COVER_W / COVER_H; const ratio = img.width / img.height;
+      const sw = ratio > want ? img.height * want : img.width; const sh = ratio > want ? img.height : img.width / want;
+      const cv = document.createElement('canvas'); cv.width = COVER_W; cv.height = COVER_H;
+      const g = cv.getContext('2d'); g.fillStyle = '#1e1f22'; g.fillRect(0, 0, COVER_W, COVER_H);
+      g.drawImage(img, (img.width - sw) / 2, (img.height - sh) / 2, sw, sh, 0, 0, COVER_W, COVER_H);
+      URL.revokeObjectURL(url);
+      const small = img.width < COVER_W || img.height < COVER_H;
+      resolve({ url: cv.toDataURL('image/jpeg', 0.84), note: small ? `This image is ${img.width} × ${img.height} px, smaller than the recommended ${COVER_W} × ${COVER_H}, so it may look soft.` : `Cover set (${img.width} × ${img.height} px${Math.abs(ratio - want) > 0.02 ? ', cropped to 3:4' : ''}).` });
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('bad image')); };
+    img.src = url;
+  });
+}
+function exportPack(p) {
+  const out = exportablePack(p);
+  const held = Object.values(p.content || {}).flat().filter((e) => e.imported === 'ddb').length;
+  downloadText(`${out.id}.json`, JSON.stringify(out, null, 2));
+  toast(held ? `Downloaded ${p.name}. Left out ${held} D&D Beyond import placeholder${held > 1 ? 's' : ''}.` : `Downloaded ${p.name}`);
 }
 
 // ---------------------------------------------------------------- list page
+let filter = 'all';
+let wizStep = 'start'; let wizKey = null;
 export function renderHomebrew(root, sub, go) {
   if (sub) return renderEditor(root, sub, go);
   const rerender = () => renderHomebrew(root, null, go);
-  const packs = loadPacks();
-  const { p: mine } = myPack();
-  const others = packs.filter((x) => x.id !== MY);
-  const count = (pk) => Object.entries(pk.content || {}).filter(([, v]) => v.length).map(([k, v]) => `${v.length} ${k}`).join(', ') || 'empty';
-  const mineEntries = Object.entries(TYPES).flatMap(([type]) => (mine.content[type] || []).map((e) => ({ type, e })));
+  const mine = ownPacks();
+  if (filter !== 'all' && !mine.some((p) => p.id === filter)) filter = 'all';
+  if (!mine.some((p) => p.id === activePack)) setActive(MY);
+  const entries = mine.flatMap((p) => Object.entries(TYPES).flatMap(([type]) => (p.content[type] || []).map((e) => ({ type, e, p }))));
+  const shown = entries.filter((x) => filter === 'all' || x.p.id === filter);
   const openImport = (preset) => importDialog(preset, rerender);
+  const packPill = (p) => h('span.pack-pill', { style: `--pc:${packColor(p)}` }, p.name);
 
   const page = h('div.homebrew', {},
-    h('div.home-head', {}, h('div', {}, h('h1', {}, 'Homebrew'), h('p.muted', {}, 'Create, import and share your own content. It appears in the character builder and compendium right away, and is saved in this browser.')),
+    h('div.home-head', {}, h('div', {}, h('h1', {}, 'Homebrew'), h('p.muted', {}, 'Create your own content and organise it into packs. Packs show up in Compendium → Library, and you can share one as a .json file that anyone can import.')),
       h('div.row', {},
         h('button.btn', { onclick: () => openImport() }, '⇪ Import'),
-        h('button.btn.primary', { onclick: () => exportDialog(mine), disabled: !mineEntries.length }, '⇩ Export'))),
-    h('div.drop-hint', {}, 'Tip: drop a homebrew .json file anywhere on this page to import it. DND Infinite packs and 5etools homebrew files both work.'),
+        h('button.btn', { onclick: () => exportDialog(mine), disabled: !entries.length }, '⇩ Export a selection'),
+        h('button.btn.primary', { onclick: () => packDialog(null, (id) => { filter = id; rerender(); }) }, '＋ New pack'))),
+    h('div.drop-hint', {}, 'Tip: drop a homebrew .json file anywhere on this page to import it. Infinity Codex packs and 5etools homebrew files both work.'),
+    h('h2', {}, 'My Packs'),
+    h('div.cover-grid', {}, mine.map((p) => h(`div.cover-card${filter === p.id ? '.on' : ''}`, {},
+      h('button.cover-btn', { type: 'button', title: `Show ${p.name}'s entries`, onclick: () => { filter = filter === p.id ? 'all' : p.id; setActive(p.id); rerender(); } }, packCover(p)),
+      h('div.cover-acts', {},
+        h('button.btn.small', { onclick: () => packDialog(p, rerender) }, 'Details'),
+        h('button.btn.small', { onclick: () => exportPack(p), disabled: !countLabel(p) }, '⇩ .json'),
+        h('a.btn.small', { href: `#compendium-library-${p.id}` }, 'Library'),
+        p.id !== MY ? h('button.btn.small.danger', { onclick: () => confirmDialog(`Delete ${p.name}?`, `Its ${countLabel(p) || 'entries'} will be deleted too, and characters that use them will lose those options. Download it first if you might want it back.`, () => { savePacks(loadPacks().filter((x) => x.id !== p.id)); rebuild(); rerender(); }, 'Delete pack') }, 'Delete') : null))),
+      h('button.cover-new', { type: 'button', onclick: () => packDialog(null, (id) => { filter = id; rerender(); }) }, h('span', {}, '＋'), h('span', {}, 'New pack'))),
     h('div.card', {},
-      h('div.row.between', {}, h('h3', {}, 'My Homebrew ', h('span.muted.tiny', {}, `· ${count(mine)}`))),
+      h('div.row.between', {}, h('h3', {}, 'Create'),
+        h('label.tiny.muted', {}, 'New entries go into ', h('select', { onchange: (ev) => { setActive(ev.target.value); } }, mine.map((p) => h('option', { value: p.id, selected: p.id === activePack }, p.name))))),
       h('div.new-grid', {}, Object.entries(TYPES).map(([type, t]) => h('a.new-tile', { href: `#homebrew-new-${type}` }, h('span.nt-ico', {}, t.icon), h('span', {}, `New ${t.label}`)))),
-      h('p.muted.tiny', {}, 'Want to tweak something that already exists? Open it in the Compendium and press “Copy to My Homebrew”, or use “Start from…” in any editor.'),
-      mineEntries.length ? [
-        h('input.search', { type: 'search', placeholder: `Search ${mineEntries.length} entries…`, oninput: (ev) => { const q = ev.target.value.toLowerCase(); page.querySelectorAll('.hb-table tr').forEach((tr) => { tr.style.display = tr.dataset.name.includes(q) ? '' : 'none'; }); } }),
-        h('table.hb-table', {}, h('tbody', {}, mineEntries.map(({ type, e }) => h('tr', { 'data-name': `${e.name} ${TYPES[type].label}`.toLowerCase() },
+      h('p.muted.tiny', {}, 'Want to tweak something that already exists? Open it in the Compendium and press “Copy to Homebrew”, or use “Start from…” in any editor.')),
+    h('div.card', {},
+      h('div.row.between', {}, h('h3', {}, filter === 'all' ? 'All my entries ' : `${mine.find((p) => p.id === filter).name} `, h('span.muted.tiny', {}, `· ${shown.length}`)),
+        h('select', { onchange: (ev) => { filter = ev.target.value; if (filter !== 'all') setActive(filter); rerender(); } }, h('option', { value: 'all' }, 'All my packs'), mine.map((p) => h('option', { value: p.id, selected: filter === p.id }, p.name)))),
+      shown.length ? [
+        h('input.search', { type: 'search', placeholder: `Search ${shown.length} entries…`, oninput: (ev) => { const q = ev.target.value.toLowerCase(); page.querySelectorAll('.hb-table tr').forEach((tr) => { tr.style.display = tr.dataset.name.includes(q) ? '' : 'none'; }); } }),
+        h('table.hb-table', {}, h('tbody', {}, shown.map(({ type, e, p }) => h('tr', { 'data-name': `${e.name} ${TYPES[type].label} ${p.name}`.toLowerCase() },
           h('td', {}, TYPES[type].icon), h('td', {}, h('b', {}, e.name), e.imported === 'ddb' ? h('span.pill.ddb-pill', { title: 'Placeholder created when importing a D&D Beyond character. Edit it to fill in details.' }, 'D&D Beyond import') : null, h('div.muted.tiny', {}, TYPES[type].label + (e.classId ? ` · ${getClass(e.classId)?.name || cap(e.classId)}` : '') + (e.level !== undefined && type === 'spells' ? ` · ${e.level ? `Level ${e.level}` : 'Cantrip'}` : ''))),
+          h('td', {}, mine.length > 1 ? h('select.move-pack', { title: 'Move to another pack', style: `--pc:${packColor(p)}`, onchange: (ev) => { moveEntry(type, e.id, ev.target.value); toast(`Moved ${e.name}`); rerender(); } }, mine.map((x) => h('option', { value: x.id, selected: x.id === p.id }, x.name))) : packPill(p)),
           h('td.actions', {},
             h('a.btn.small', { href: `#homebrew-edit-${type}-${e.id}` }, 'Edit'),
             h('button.btn.small', { title: 'Copy this entry as JSON', onclick: () => copyText(JSON.stringify({ ...e, kind: type }, null, 2)) }, 'Copy'),
-            h('button.btn.small', { onclick: () => { saveEntry(type, { ...structuredClone(e), id: `${e.id}-copy-${Date.now().toString(36).slice(-3)}`, name: `${e.name} (copy)` }); rerender(); } }, 'Duplicate'),
+            h('button.btn.small', { onclick: () => { saveEntry(type, { ...structuredClone(e), id: `${e.id}-copy-${Date.now().toString(36).slice(-3)}`, name: `${e.name} (copy)` }, null, p.id); rerender(); } }, 'Duplicate'),
             h('button.btn.small.danger', { onclick: () => confirmDialog(`Delete ${e.name}?`, 'Characters that use it will lose that option.', () => { deleteEntry(type, e.id); rerender(); }) }, 'Delete'))))))]
-        : h('p.muted.center', {}, 'Nothing yet — pick a type above, or import a file.')),
-    h('div.home-head', {}, h('div', {}, h('h2', {}, 'Built-in Content Packs'), h('p.muted', {}, 'Openly licensed books from other publishers (OGL 1.0a or CC-BY-4.0). Switch them on or off for everyone here, or per character in the builder\'s Settings → Sources. Changes reload the page.'))),
-    h('div.pack-list', {}, BUILTIN_PACKS.map((bp) => h('div.pack', {},
-      h('div', {}, h('h3', {}, bp.name, h('span.pill', {}, bp.license)), h('p.tiny', {}, bp.description),
-        h('p.muted.tiny', {}, `${Object.entries(bp.counts).map(([k, v]) => `${v.toLocaleString()} ${k}`).join(', ')} · ${bp.kb >= 1024 ? `${(bp.kb / 1024).toFixed(1)} MB` : `${bp.kb} KB`} · ${bp.sources.join(', ')}`)),
-      h('label.toggle', {}, h('input', { type: 'checkbox', checked: isBuiltinEnabled(bp), onchange: (ev) => { setBuiltinEnabled(bp.id, ev.target.checked); toast('Reloading content…'); setTimeout(() => location.reload(), 300); } }), ' Enabled')))),
-    h('div.home-head', {}, h('h2', {}, 'Imported Packs'), h('div.row', {}, h('button.btn', { onclick: () => { addPackObj(structuredClone(EXAMPLE_PACK)); rerender(); } }, 'Add example pack'))),
-    others.length ? h('div.pack-list', {}, others.map((pk) => h('div.pack', {},
-      h('div', {}, h('h3', {}, pk.name, pk.version ? h('span.muted.tiny', {}, ` v${pk.version}`) : null), h('p.muted.tiny', {}, `${count(pk)}${pk.author ? ` · by ${pk.author}` : ''}`)),
-      h('div.row', {},
-        h('label.toggle', {}, h('input', { type: 'checkbox', checked: pk.enabled !== false, onchange: (ev) => { savePacks(loadPacks().map((x) => (x.id === pk.id ? { ...x, enabled: ev.target.checked } : x))); rerender(); } }), ' Enabled'),
-        h('button.btn.small', { title: 'Copy every entry into My Homebrew so you can edit them', onclick: () => { const { packs: all2, p } = myPack(); const r = mergeInto(p, pk); writeMy(p, all2); toast(`Copied ${r.added} entries into My Homebrew`); rerender(); } }, 'Copy to My Homebrew'),
-        h('button.btn.small', { onclick: () => downloadText(`${pk.id}.json`, JSON.stringify(pk, null, 2)) }, 'Download'),
-        h('button.btn.small.danger', { onclick: () => confirmDialog('Remove pack?', `Characters using "${pk.name}" content will lose those options.`, () => { savePacks(loadPacks().filter((x) => x.id !== pk.id)); rerender(); }, 'Remove') }, 'Remove')))))
-      : h('p.muted', {}, 'No imported packs yet.'),
-    h('p.muted.tiny', {}, 'Only share packs that contain your own creations or openly licensed material.'));
+        : h('p.muted.center', {}, filter === 'all' ? 'Nothing yet. Pick a type above, or import a file.' : 'This pack is empty. Create something above, or move entries into it.')),
+    h('p.muted.tiny', {}, 'Imported packs and the built-in books are in ', h('a', { href: '#compendium-library' }, 'Compendium → Library'), '. Only share packs that contain your own creations or openly licensed material.'));
 
   // Drag and drop a file anywhere on the page.
   page.addEventListener('dragover', (ev) => { ev.preventDefault(); page.classList.add('dragging'); });
@@ -212,14 +318,21 @@ function addPackObj(pack) {
   const errs = validatePack(pack);
   if (errs.length) { toast(errs[0]); return false; }
   const packs = loadPacks();
+  const { own, format, formatVersion, ...clean } = pack;
   let id = pack.id === MY ? `${pack.id}-imported` : pack.id;
-  if (packs.some((x) => x.id === id)) id = `${id}-${Date.now().toString(36).slice(-4)}`;
-  savePacks([...packs, { ...pack, id, enabled: true }]); rebuild();
+  const same = packs.find((x) => x.id === id);
+  if (same && !isOwn(same)) {
+    // Importing a pack you already have replaces it (a newer version), keeping it on or off as it was.
+    Object.assign(same, clean, { id, enabled: same.enabled, imported: new Date().toISOString() });
+    savePacks(packs); rebuild(); return 'updated';
+  }
+  if (same) id = `${id}-${Date.now().toString(36).slice(-4)}`;
+  savePacks([...packs, { ...clean, id, enabled: true, imported: new Date().toISOString() }]); rebuild();
   return true;
 }
 
 /** Import: choose a source (file, paste or web address), preview what's inside, then merge or add as a pack. */
-function importDialog(preset, done) {
+export function importDialog(preset, done) {
   let parsed = null;
   const previewBox = h('div.import-preview');
   const show = (text, name) => {
@@ -227,16 +340,16 @@ function importDialog(preset, done) {
     if (parsed.format === 'character') { previewBox.replaceChildren(h('p.warn', {}, parsed.warnings[0])); parsed = null; return; }
     const sum = summarize(parsed.pack);
     previewBox.replaceChildren(...[
-      h('div.ip-head', {}, h('b', {}, parsed.pack.name), h('span.pill', {}, { pack: 'DND Infinite pack', entries: 'Entries', '5etools': '5etools homebrew' }[parsed.format])),
+      h('div.ip-head', {}, h('b', {}, parsed.pack.name), h('span.pill', {}, { pack: 'Infinity Codex pack', entries: 'Entries', '5etools': '5etools homebrew' }[parsed.format])),
       sum.length ? h('ul.compact', {}, sum.map((x) => h('li', {}, h('b', {}, `${x.count} ${x.kind}`), ': ', x.names.join(', '), x.count > x.names.length ? '…' : ''))) : h('p.warn', {}, 'Nothing importable was found in this file.'),
       parsed.warnings.length ? h('ul.compact.warn', {}, parsed.warnings.map((w) => h('li', {}, w))) : null].filter(Boolean));
   };
-  const ta = h('textarea.code', { rows: 8, placeholder: 'Paste a DND Infinite pack, a single entry, or a 5etools homebrew file…', oninput: () => show(ta.value) });
+  const ta = h('textarea.code', { rows: 8, placeholder: 'Paste an Infinity Codex pack, a single entry, or a 5etools homebrew file…', oninput: () => show(ta.value) });
   const file = h('input', { type: 'file', accept: '.json,application/json', onchange: async (ev) => { const f = ev.target.files[0]; if (f) { ta.value = await f.text(); show(ta.value, f.name.replace(/\.json$/i, '')); } } });
   const url = h('input', { type: 'url', placeholder: 'https://raw.githubusercontent.com/…/homebrew.json' });
   const fetchUrl = async () => {
     try { const r = await fetch(url.value); if (!r.ok) throw new Error(r.status); ta.value = await r.text(); show(ta.value); }
-    catch { previewBox.replaceChildren(h('p.warn', {}, 'Couldn\'t download that address. Inside Claude, pages can\'t reach other websites — download the file and use “From a file” instead. When you host DND Infinite yourself, raw GitHub links work.')); }
+    catch { previewBox.replaceChildren(h('p.warn', {}, 'Couldn\'t download that address. Inside Claude, pages can\'t reach other websites — download the file and use “From a file” instead. When you host Infinity Codex yourself, raw GitHub links work.')); }
   };
   const drop = h('div.drop-zone', {
     ondragover: (ev) => { ev.preventDefault(); drop.classList.add('over'); }, ondragleave: () => drop.classList.remove('over'),
@@ -248,21 +361,24 @@ function importDialog(preset, done) {
     h('div.field', {}, h('label', {}, 'Or paste JSON'), ta),
     h('div.field', {}, h('label', {}, 'Or download from a web address'), h('div.row', {}, url, h('button.btn.small', { type: 'button', onclick: fetchUrl }, 'Fetch'))),
     h('h4', {}, 'Preview'), previewBox,
-    h('p.muted.tiny', {}, '“Merge” adds everything to My Homebrew so you can edit it. “Add as pack” keeps it separate so you can switch it on and off as a whole.')),
+    h('p.muted.tiny', {}, '“Add to Library” keeps it as its own pack (in Compendium → Library) that you can switch on and off; importing a newer version replaces the old one. “Merge” copies everything into one of your packs so you can edit it.')),
   [{ label: 'Cancel' },
-    { label: 'Merge into My Homebrew', onClick: () => { if (!parsed?.pack) { toast('Nothing to import yet'); return false; } const { packs, p } = myPack(); const r = mergeInto(p, parsed.pack); writeMy(p, packs); toast(`Added ${r.added} entries${r.renamed ? ` (${r.renamed} renamed to avoid clashes)` : ''}`); done(); return true; } },
-    { label: 'Add as pack', primary: true, onClick: () => { if (!parsed?.pack) { toast('Nothing to import yet'); return false; } if (addPackObj(parsed.pack)) { toast(`Added “${parsed.pack.name}”`); done(); return true; } return false; } }]);
+    { label: `Merge into ${ownPacks().find((p) => p.id === activePack)?.name || 'My Homebrew'}`, onClick: () => { if (!parsed?.pack) { toast('Nothing to import yet'); return false; } const packs = loadPacks(); if (!packs.some((p) => p.id === MY)) packs.push(defaultMy()); const p = packs.find((x) => x.id === activePack && isOwn(x)) || packs.find((x) => x.id === MY); const r = mergeInto(p, parsed.pack); savePacks(packs); rebuild(); toast(`Added ${r.added} entries to ${p.name}${r.renamed ? ` (${r.renamed} renamed to avoid clashes)` : ''}`); done(); return true; } },
+    { label: 'Add to Library', primary: true, onClick: () => { if (!parsed?.pack) { toast('Nothing to import yet'); return false; } const r = addPackObj(parsed.pack); if (r) { toast(r === 'updated' ? `Updated “${parsed.pack.name}” in your Library` : `Added “${parsed.pack.name}” to your Library`); done(); return true; } return false; } }]);
 }
 
 /** Export: choose entries from My Homebrew, name the pack, then download or copy it. */
-function exportDialog(mine) {
+function exportDialog(packs) {
+  // Every entry from all your packs, grouped by type.
+  const mine = { content: {} };
+  for (const p of packs) for (const [k, v] of Object.entries(p.content || {})) (mine.content[k] ||= []).push(...v);
   // Placeholders from D&D Beyond imports hold text from your own character sheet: left out unless you tick them.
   const chosen = new Set(Object.entries(mine.content).flatMap(([k, v]) => v.filter((e) => e.imported !== 'ddb').map((e) => `${k}:${e.id}`)));
   const meta = { name: 'My Homebrew', author: '', version: '1.0.0', license: '', description: '' };
   const build = () => {
     const content = {};
     for (const [k, v] of Object.entries(mine.content)) { const picked = v.filter((e) => chosen.has(`${k}:${e.id}`)); if (picked.length) content[k] = picked; }
-    return { id: slug(meta.name) || 'homebrew', ...meta, content };
+    return exportablePack({ id: slug(meta.name) || 'homebrew', ...meta, content }, { keepDdb: true });
   };
   const countEl = h('span.muted.tiny');
   const refresh = () => { countEl.textContent = `${chosen.size} selected`; };
@@ -277,7 +393,7 @@ function exportDialog(mine) {
     metaField('description', 'Description', 'What’s inside, in a sentence'),
     h('div.row.between', {}, h('h4', {}, 'Include'), countEl), groups,
     Object.values(mine.content).some((v) => v.some((e) => e.imported === 'ddb')) ? h('p.notice.tiny', {}, 'Entries marked “D&D Beyond import” are unticked: they can contain text from published books that came with your character sheet. Keep those for your own use.') : null,
-    h('p.muted.tiny', {}, 'The file can be imported into any copy of DND Infinite: Homebrew → Import, or drop it on the page.')),
+    h('p.muted.tiny', {}, 'The file can be imported into any copy of Infinity Codex: Homebrew → Import, or drop it on the page.')),
   [{ label: 'Copy JSON', onClick: () => { copyText(JSON.stringify(build(), null, 2)); return false; } },
     { label: 'Download .json', primary: true, onClick: () => { const p = build(); downloadText(`${p.id}.json`, JSON.stringify(p, null, 2)); return false; } }]);
 }
@@ -294,10 +410,11 @@ function renderEditor(root, sub, go) {
   const DRAFT_KEY = `qw.hbdraft.${sub}`;
   let restored = false;
   if (draftKey !== key) {
-    draftKey = key; jsonMode = !!T.json;
-    const existing = editing ? (myPack().p.content[type] || []).find((e) => e.id === editing) : null;
+    draftKey = key; jsonMode = false;
+    const existing = editing ? ownPacks().flatMap((p) => p.content[type] || []).find((e) => e.id === editing) : null;
     if (editing && !existing) { toast('Entry not found'); return go('homebrew'); }
-    draft = existing ? structuredClone(fromEntry[type] ? fromEntry[type](existing) : existing) : (T.json ? structuredClone(CLASS_TEMPLATE) : {});
+    draft = existing ? structuredClone(fromEntry[type] ? fromEntry[type](existing) : existing) : (type === 'classes' ? structuredClone(NEW_CLASS) : {});
+    wizStep = existing ? (wizStep && wizKey === key ? wizStep : stepsFor(type, draft, T.fields(draft))[1].id) : 'start'; wizKey = key;
     if (!existing) for (const f of T.fields?.(draft) || []) if (f.def !== undefined && draft[f.k] === undefined) draft[f.k] = f.def;
     try { const saved = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null'); if (saved && saved.name !== undefined) { draft = saved; restored = true; } } catch { /* no saved draft */ }
   }
@@ -311,7 +428,9 @@ function renderEditor(root, sub, go) {
     const src = startPool.find((x) => x.id === id); if (!src) return;
     const copy = clean(structuredClone(src)); delete copy.label; delete copy.id;
     draft = fromEntry[type] ? fromEntry[type](copy) : copy;
+    if (type === 'classes') delete draft._raw.id;
     if (type === 'subclasses') draft.classId = src.classId;
+    wizStep = stepsFor(type, draft, T.fields(draft))[1].id;
     toast(`Started from ${src.name} — rename it and make it yours`); rerender();
   };
   const pasteDialog = () => {
@@ -319,9 +438,11 @@ function renderEditor(root, sub, go) {
       : type === 'subclasses' ? 'Oath of Embers\nIntro paragraph…\nBurning Vow (3rd level)\nFeature text…\nCinder Aura\nStarting at 7th level, …'
         : type === 'feats' ? 'Ember Born\nPrerequisite: Level 4+\nFeat text…' : 'Name on the first line\nThen the text…' });
     modal(`Paste ${T.label} text`, h('div', {}, h('p.muted', {}, 'Paste text copied from a PDF, wiki or GM Binder page. The first line is the name; the rest is sorted into the form, and you can fix anything afterwards.'), ta),
-      [{ label: 'Cancel' }, { label: 'Fill the form', primary: true, onClick: () => { const got = parseText(type, ta.value); for (const [k, v] of Object.entries(got)) if (v !== undefined && v !== '') draft[k] = v; toast('Form filled — check the preview'); rerender(); } }]);
+      [{ label: 'Cancel' }, { label: 'Fill the form', primary: true, onClick: () => { const got = parseText(type, ta.value); for (const [k, v] of Object.entries(got)) if (v !== undefined && v !== '') draft[k] = v; wizStep = 'review'; toast('Filled in — check everything below'); rerender(); } }]);
   };
   const fields = T.fields ? T.fields(draft) : [];
+  const mine = ownPacks();
+  let targetPack = (editing && packOf(type, editing)?.id) || activePack;
 
   const save = () => {
     let entry = draft;
@@ -333,33 +454,72 @@ function renderEditor(root, sub, go) {
     entry = { ...entry, id: editing || entry.id || `hb-${slug(entry.name)}` };
     // Drop blank repeating rows (an added feature/trait/action that was never filled in).
     if (!jsonMode) for (const f of fields) if (f.type === 'rows' && Array.isArray(entry[f.k])) entry[f.k] = entry[f.k].filter((r) => (r.name || r.item || '').toString().trim());
-    if (!editing && (myPack().p.content[type] || []).some((e) => e.id === entry.id)) entry.id += `-${Date.now().toString(36).slice(-4)}`;
-    const out = jsonMode && type === 'classes' ? entry : (toEntry[type] ? toEntry[type](entry) : entry);
+    if (!editing && mine.some((p) => (p.content[type] || []).some((e) => e.id === entry.id))) entry.id += `-${Date.now().toString(36).slice(-4)}`;
+    const out = jsonMode ? entry : (toEntry[type] ? toEntry[type](entry) : entry);
+    for (const k of Object.keys(out)) if (k.startsWith('_')) delete out[k];
     if (type === 'classes' && (!out.features || !out.hitDie)) { toast('A class needs at least "hitDie" and "features"'); return; }
-    saveEntry(type, out, editing);
+    saveEntry(type, out, editing, targetPack);
+    if (!editing) setActive(targetPack);
     discard(); draftKey = null; toast(`Saved ${out.name}`); go('homebrew');
   };
 
-  const preview = previewOf(type, toEntry[type] ? safe(() => toEntry[type]({ ...draft, id: draft.id || 'preview' })) : draft);
-  root.replaceChildren(h('div.hb-editor', {},
-    h('a.linkish', { href: '#homebrew', onclick: () => { draftKey = null; } }, '‹ Back to Homebrew'),
-    h('h1', {}, `${editing ? 'Edit' : 'New'} ${T.label}`),
-    restored ? h('div.warnbox.small', {}, 'Restored your unsaved draft. ', h('button.linkish', { type: 'button', onclick: () => { discard(); draftKey = null; renderEditor(root, sub, go); } }, 'Discard it')) : null,
-    !T.json ? h('div.editor-tools', {},
-      h('label', {}, 'Start from… ', h('select', { onchange: (e) => e.target.value && startFrom(e.target.value) }, h('option', { value: '' }, `— copy an existing ${T.label.toLowerCase()} —`),
-        startPool.map((x) => h('option', { value: x.id }, `${x.label}${x.source && x.source !== 'SRD' ? ` · ${x.source}` : ''}`)))),
-      h('button.btn.small', { type: 'button', onclick: pasteDialog }, '📋 Paste text…'),
-      h('button.btn.small', { type: 'button', title: 'Copy this entry as JSON', onclick: () => copyText(JSON.stringify(toEntry[type] ? toEntry[type]({ ...draft, id: draft.id || `hb-${slug(draft.name || 'new')}` }) : draft, null, 2)) }, 'Copy JSON')) : null,
-    !T.json ? h('div.seg', {}, h(`button${!jsonMode ? '.on' : ''}`, { type: 'button', onclick: () => { jsonMode = false; rerender(); } }, 'Form'),
-      h(`button${jsonMode ? '.on' : ''}`, { type: 'button', onclick: () => { jsonMode = true; rerender(); } }, 'JSON')) : null,
-    h('div.editor-cols', {},
-      h('form.card.hb-form', { onsubmit: (e) => { e.preventDefault(); save(); }, oninput: persist, onchange: persist },
-        jsonMode
-          ? [T.json ? h('p.muted', {}, 'Classes have many interlocking parts, so they are edited as JSON. Start from the template below; see docs/data-format.md for every field.') : null,
-            h('textarea.code.json-edit', { rows: 26 }, JSON.stringify(jsonMode && !T.json && toEntry[type] ? toEntry[type]({ ...draft, id: draft.id || `hb-${slug(draft.name || 'new')}` }) : draft, null, 2))]
-          : fields.map((f) => field(f, draft, rerender)),
-        h('div.row', {}, h('button.btn.primary', { type: 'submit' }, 'Save'), h('a.btn', { href: '#homebrew', onclick: () => { discard(); draftKey = null; } }, 'Cancel'), h('span.muted.tiny', {}, 'Drafts save automatically.'))),
-      !jsonMode ? h('div.hb-preview', {}, h('h3', {}, 'Preview'), preview) : null)));
+  const preview = () => previewOf(type, toEntry[type] ? safe(() => toEntry[type]({ ...draft, id: draft.id || 'preview' })) : draft);
+  const cancel = () => { discard(); draftKey = null; };
+  // ---- the builder layout: dark step bar, one step at a time, Back / Next
+  const steps = stepsFor(type, draft, fields);
+  if (!steps.some((x) => x.id === wizStep)) wizStep = steps[editing ? 1 : 0].id;
+  const idx = steps.findIndex((x) => x.id === wizStep);
+  const step = steps[idx]; const prev = steps[idx - 1]; const next = steps[idx + 1];
+  const goStep = (id) => { wizStep = id; persist(); renderEditor(root, sub, go); window.scrollTo(0, 0); };
+  const set = (k, v, redraw = true) => { if (v === undefined) delete draft[k]; else draft[k] = v; if (redraw) rerender(); else persist(); };
+  const setMany = (patch) => { for (const [k, v] of Object.entries(patch)) { if (v === undefined) delete draft[k]; else draft[k] = v; } rerender(); };
+  const ctx = { d: draft, set, setMany, fields, field: (f) => field(f, draft, rerender), type };
+  const missing = (st) => missingIn(st, fields, draft).length;
+  const allMissing = steps.reduce((n, st) => n + missing(st), 0);
+  let body;
+  if (jsonMode && wizStep !== 'start') {
+    body = [h('p.muted', {}, 'Advanced: the entry exactly as it is saved. Anything the steps don’t cover can be added here; see docs/data-format.md for every field.'),
+      h('textarea.code.json-edit', { rows: 28 }, JSON.stringify(toEntry[type] ? safe(() => toEntry[type]({ ...draft, id: draft.id || `hb-${slug(draft.name || 'new')}` })) : draft, null, 2)),
+      h('div.row', {}, h('button.btn.primary', { type: 'button', onclick: save }, 'Save'), h('button.btn', { type: 'button', onclick: () => { try { const parsed = JSON.parse(root.querySelector('textarea.json-edit').value); draft = fromEntry[type] ? fromEntry[type](parsed) : parsed; } catch { toast('That JSON is not valid'); return; } jsonMode = false; rerender(); } }, 'Back to the steps'))];
+  } else if (wizStep === 'start') {
+    body = [
+      h('p.lead', {}, START_TEXT[type] || ''),
+      h('div.option-cards.hb-cards.c3', {},
+        h('button.option-card', { type: 'button', onclick: () => goStep(steps[1].id) }, h('b', {}, h('span.oc-ico', {}, '✦'), 'Start from scratch'), h('span', {}, 'Sensible defaults are filled in; change what you like.')),
+        h('label.option-card.oc-select', {}, h('b', {}, h('span.oc-ico', {}, '⧉'), `Copy an existing ${T.label.toLowerCase()}`), h('span', {}, 'Start from something close and change it.'),
+          h('select', { onchange: (e) => e.target.value && startFrom(e.target.value) }, h('option', { value: '' }, `— choose a ${T.label.toLowerCase()} —`), startPool.map((x) => h('option', { value: x.id }, `${x.label}${x.source && x.source !== 'SRD' ? ` · ${x.source}` : ''}`)))),
+        h('button.option-card', { type: 'button', onclick: pasteDialog }, h('b', {}, h('span.oc-ico', {}, '📋'), 'Paste text'), h('span', {}, 'From a PDF, wiki or GM Binder page: we sort it into the steps.'))),
+      editing || draft.name ? h('p.muted.tiny', {}, 'You already have work in progress: ', h('button.linkish', { type: 'button', onclick: () => goStep(steps[1].id) }, 'continue editing ›')) : null];
+  } else if (wizStep === 'review') {
+    body = [
+      allMissing ? h('div.warnbox', {}, h('strong', {}, `${allMissing} required field${allMissing > 1 ? 's' : ''} left`), h('ul', {}, steps.filter((st) => missing(st)).map((st) => h('li', {}, h('button.linkish', { type: 'button', onclick: () => goStep(st.id) }, st.label), ` — ${missingIn(st, fields, draft).map((f) => f.label).join(', ')}`)))) : null,
+      h('div.card.hb-preview', {}, preview()),
+      h('div.hb-save-row', {},
+        h('button.btn.primary.big', { type: 'button', onclick: save, disabled: !!allMissing }, editing ? 'Save changes' : `Save ${T.label}`),
+        h('label', {}, ' in ', h('select', { title: 'Which pack this goes in', onchange: (ev) => { targetPack = ev.target.value; } }, mine.map((p) => h('option', { value: p.id, selected: p.id === targetPack }, p.name)))),
+        h('a.btn', { href: '#homebrew', onclick: cancel }, 'Cancel')),
+      h('p.muted.tiny', {}, 'Your draft saves as you go, so you can leave and come back. ',
+        h('button.linkish', { type: 'button', onclick: () => { jsonMode = true; rerender(); } }, 'Edit as JSON (advanced)'), ' · ',
+        h('button.linkish', { type: 'button', title: 'Copy this entry as JSON', onclick: () => copyText(JSON.stringify(toEntry[type] ? safe(() => toEntry[type]({ ...draft, id: draft.id || `hb-${slug(draft.name || 'new')}` })) : draft, null, 2)) }, 'Copy JSON'))];
+  } else {
+    body = renderStep(step, ctx);
+  }
+  const scrollY = window.scrollY;
+  root.replaceChildren(
+    h('div.builder-bar.hb-bar', {},
+      h('div.bb-title', {}, h('div.bb-name', {}, 'Homebrew Builder'), h('div.bb-sub', {}, h('span', {}, T.icon), h('span.bb-charname', {}, draft.name || `New ${T.label.toLowerCase()}`))),
+      h('nav.bb-steps', {}, steps.map((st) => { const n = missing(st); return h(`a.bb-step${st.id === wizStep ? '.on' : ''}`, { href: '#', onclick: (e) => { e.preventDefault(); goStep(st.id); } }, st.label, n ? h('span.badge', {}, n) : null); })),
+      h('a.bb-sheet', { href: '#homebrew', title: 'Back to Homebrew', onclick: () => { draftKey = null; } }, '✕')),
+    h('div.builder.hb-builder', {},
+      restored ? h('div.warnbox.small', {}, 'Restored your unsaved draft. ', h('button.linkish', { type: 'button', onclick: () => { discard(); draftKey = null; renderEditor(root, sub, go); } }, 'Discard it')) : null,
+      h('div.hb-head', {}, h('h1', {}, `${editing ? 'Edit' : 'New'} ${T.label}${wizStep !== 'start' && wizStep !== 'review' && !jsonMode ? `: ${step.label}` : ''}`),
+        wizStep !== 'start' && !jsonMode ? h('button.btn.small', { type: 'button', onclick: () => { jsonMode = true; rerender(); } }, '{ } JSON') : null),
+      h('form.step-body.hb-form', { onsubmit: (e) => { e.preventDefault(); next ? goStep(next.id) : save(); }, oninput: persist, onchange: persist }, body),
+      wizStep !== 'start' && wizStep !== 'review' && !jsonMode ? h('details.hb-live', {}, h('summary', {}, 'Preview'), h('div.hb-preview', {}, preview())) : null,
+      !jsonMode ? h('div.step-nav', {},
+        prev ? h('button.btn', { type: 'button', onclick: () => goStep(prev.id) }, `‹ ${prev.label}`) : h('a.btn', { href: '#homebrew', onclick: () => { draftKey = null; } }, '‹ Homebrew'),
+        next ? h('button.btn.primary', { type: 'button', onclick: () => goStep(next.id) }, `${next.label} ›`) : h('button.btn.primary', { type: 'button', onclick: save, disabled: !!allMissing }, 'Save ›')) : null));
+  window.scrollTo(0, scrollY);
 }
 const safe = (fn) => { try { return fn(); } catch { return {}; } };
 
@@ -424,7 +584,7 @@ const CLASS_TEMPLATE = {
 
 // An original example pack (not SRD content) showing the pack format.
 export const EXAMPLE_PACK = {
-  id: 'example-powder', name: 'Example: Powder & Steel', version: '1.0.0', author: 'DND Infinite contributors', license: 'CC-BY-4.0',
+  id: 'example-powder', name: 'Example: Powder & Steel', version: '1.0.0', author: 'Infinity Codex contributors', license: 'CC-BY-4.0',
   content: {
     subclasses: [{
       classId: 'fighter', id: 'powder-adept', name: 'Powder Adept', desc: 'An original example subclass: a fighter who specializes in black-powder firearms.',

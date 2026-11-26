@@ -1,5 +1,5 @@
-// Homebrew import: recognise what was pasted/dropped and turn it into a DND Infinite content pack.
-// Supported: DND Infinite packs, single entries or arrays of entries, and 5etools homebrew JSON
+// Homebrew import: recognise what was pasted/dropped and turn it into an Infinity Codex content pack.
+// Supported: Infinity Codex packs, single entries or arrays of entries, and 5etools homebrew JSON
 // (spells, feats, backgrounds, races, subclasses, items, monsters). Pure functions — no DOM.
 
 const KINDS = ['classes', 'subclasses', 'species', 'backgrounds', 'feats', 'spells', 'items', 'monsters'];
@@ -22,7 +22,7 @@ export function guessKind(e) {
 
 /**
  * Parse any supported JSON into { pack, format, warnings }.
- * `pack` is always a valid DND Infinite pack object (may be empty).
+ * `pack` is always a valid Infinity Codex pack object (may be empty).
  */
 export function parseImport(input, fallbackName = 'Imported homebrew') {
   const data = typeof input === 'string' ? JSON.parse(input) : input;
@@ -79,7 +79,7 @@ export function untag(s) {
   return out;
 }
 
-/** Flatten 5etools "entries" into DND Infinite rules text. */
+/** Flatten 5etools "entries" into Infinity Codex rules text. */
 export function flatten(entries, depth = 0) {
   if (entries == null) return '';
   if (typeof entries === 'string') return untag(entries);
@@ -194,7 +194,7 @@ function fromFiveTools(data, warnings, fallbackName) {
   }
   if (data.class?.length) warnings.push(`${data.class.length} class(es) were skipped: full classes from 5etools files aren't supported yet. Their subclasses still import if they belong to an existing class.`);
   const unknownClass = (content.subclasses || []).filter((s) => !['barbarian', 'bard', 'cleric', 'druid', 'fighter', 'monk', 'paladin', 'ranger', 'rogue', 'sorcerer', 'warlock', 'wizard', 'mechanist', 'witch', 'vanguard', 'theurge'].includes(s.classId));
-  if (unknownClass.length) warnings.push(`${unknownClass.length} subclass(es) belong to classes DND Infinite doesn't have (${[...new Set(unknownClass.map((s) => s.classId))].join(', ')}) and won't appear in the builder.`);
+  if (unknownClass.length) warnings.push(`${unknownClass.length} subclass(es) belong to classes Infinity Codex doesn't have (${[...new Set(unknownClass.map((s) => s.classId))].join(', ')}) and won't appear in the builder.`);
   const name = src?.full || src?.json || fallbackName;
   const author = (src?.authors || []).join(', ');
   return { format: '5etools', pack: { id: slug(src?.json || name), name, version: src?.version || '1.0.0', author, license: '', content }, warnings };
