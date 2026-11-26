@@ -2,6 +2,7 @@
 import { h, confirmDialog, modal, toast, portraitEl } from './dom.js';
 import { listCharacters, newCharacter, saveCharacter, deleteCharacter, duplicateCharacter, importCharacter } from '../engine/store.js';
 import { compute } from '../engine/rules.js';
+import { getSpell } from '../data/index.js';
 import { importDdbPdf, commitPlaceholders, discardPlaceholders } from '../engine/ddb-import.js';
 import { icon } from './icons.js';
 
@@ -28,6 +29,8 @@ export function renderHome(root, go) {
         h('button.btn.ghost', { onclick: () => importDialog(doImport, openSheet) }, icon('download'), 'Import'),
         h('button.btn.primary.glow', { onclick: create }, icon('plus'), 'Create Character'))),
     backupBanner(chars, rerender),
+    // Campaign names already used, offered as suggestions in each card's campaign box.
+    h('datalist', { id: 'cc-campaigns' }, [...new Set(chars.map((c) => (c.campaign || '').trim()).filter(Boolean))].sort().map((n) => h('option', { value: n }))),
     chars.length ? h('div.char-grid', {}, chars.map((c) => {
       const d = compute(c);
       // Current health: below half HP the card takes a beating (scuffs, scratches, blood).
@@ -48,6 +51,11 @@ export function renderHome(root, go) {
               h('div.cc-hp-bar', {}, h('i', { style: `width:${pct}%` }), temp ? h('i.temp', { style: `width:${Math.min(100, Math.round((temp / max) * 100))}%` }) : null)) : null,
             wl === 3 ? h('div.cc-status.down', {}, 'Unconscious, making death saves')
               : d.warnings.length ? h('div.cc-status.warn', {}, `${d.warnings.length} choice${d.warnings.length > 1 ? 's' : ''} left`) : h('div.cc-status.ok', {}, wl ? 'Bloodied' : 'Ready to play'))),
+        // Which campaign the character is in: typed straight on the card, saved as you go.
+        h('label.cc-campaign', { title: 'The campaign this character is playing in' }, icon('d20'),
+          h('input', { type: 'text', value: c.campaign || '', placeholder: 'Add campaign…', maxlength: 60, list: 'cc-campaigns', 'aria-label': `Campaign for ${c.name || 'this character'}`,
+            onkeydown: (e) => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') { e.target.value = c.campaign || ''; e.target.blur(); } },
+            onchange: (e) => { const v = e.target.value.trim(); if (v === (c.campaign || '')) return; c.campaign = v; saveCharacter(c); toast(v ? `${c.name || 'Character'} is in ${v}` : 'Campaign cleared'); } })),
         wounds ? h('div.bd-layer.bd-o', { html: wounds.over }) : null,
         h('div.cc-actions', {},
           h('a.btn.small.ghost', { href: `#sheet-${c.id}`, onclick: (e) => flourishOpen(e, c) }, icon('eye'), 'View'),
@@ -152,6 +160,8 @@ async function previewDdb(file, openSheet) {
     { label: 'Cancel' },
     { label: 'Import character', primary: true, onClick: () => {
       if (!result) return false;
+      if (pick && !pick.chosen.size) { pickBox?.classList.add('need'); pickBox?.scrollIntoView({ block: 'center', behavior: 'smooth' }); toast('Choose which spells are prepared first'); return false; }
+      if (pick) result.character.spells.prepared = pick.order.filter((id) => pick.chosen.has(id));
       commitPlaceholders(result.placeholders);
       const c = saveCharacter(result.character); toast(`Imported ${c.name} — check it against your D&D Beyond sheet`); openSheet(c);
     } },
@@ -163,6 +173,29 @@ async function previewDdb(file, openSheet) {
     return close;
   }
   const r = result.report;
+  // Wizards: the PDF can't say which spellbook spells are prepared, so ask.
+  let pick = null; let pickBox = null;
+  if (r.preparePick) {
+    pick = { max: r.preparePick.max, order: r.preparePick.spellbook, chosen: new Set() };
+    const count = h('b.pp-count');
+    const over = h('p.pp-over', { hidden: true }, `That's more than the ${pick.max} a level ${result.character.level} Wizard can prepare under the 2024 rules (Wizard Features table). D&D Beyond allows it, so they're imported as you ticked them; the sheet will show the count in red until you unprepare the extra.`);
+    const refresh = () => {
+      count.textContent = `${pick.chosen.size} / ${pick.max} prepared`;
+      pickBox.classList.toggle('full', pick.chosen.size === pick.max);
+      pickBox.classList.toggle('over', pick.chosen.size > pick.max);
+      over.hidden = pick.chosen.size <= pick.max;
+    };
+    const ORDS = ['', '1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th'];
+    const rows = pick.order.map((id) => getSpell(id)).filter(Boolean).sort((a, b) => a.level - b.level || a.name.localeCompare(b.name));
+    pickBox = h('div.prep-pick', {},
+      h('div.pp-head', {}, h('b', {}, 'Which spells are prepared?'), count),
+      h('p.muted.tiny', {}, `D&D Beyond's PDF lists the whole spellbook (${pick.order.length} spells) but not which ${pick.max} are prepared. Tick the ones marked prepared on D&D Beyond; the rest stay in the spellbook.`),
+      h('div.pp-list', {}, rows.map((sp) => h('label.pp-row', {},
+        h('input', { type: 'checkbox', onchange: (e) => { if (e.target.checked) pick.chosen.add(sp.id); else pick.chosen.delete(sp.id); pickBox.classList.remove('need'); refresh(); } }),
+        h('span', {}, sp.name), h('small', {}, `${ORDS[sp.level]} level`)))),
+      over);
+    refresh();
+  }
   const li = (items, fmt) => h('ul', {}, items.map((x) => h('li', {}, fmt(x))));
   const group = (title, items) => items.length ? h('details', { open: items.length <= 6 }, h('summary', {}, h('b', {}, `${title} (${items.length})`)), li(items, (x) => x)) : null;
   const byKind = (list) => { const m = {}; for (const x of list) (m[x.kind] ||= []).push(x); return m; };
@@ -179,6 +212,7 @@ async function previewDdb(file, openSheet) {
       uniqItems.length ? h('span.warn', {}, `${uniqItems.length} custom item${uniqItems.length > 1 ? 's' : ''}`) : null,
       h(r.diffs.length ? 'span.warn' : 'span.ok', {}, r.diffs.length ? `${r.diffs.length} number${r.diffs.length > 1 ? 's' : ''} differ` : 'All numbers match the sheet')),
     r.warnings.length ? h('div.notice', {}, r.warnings.map((w) => h('div', {}, w))) : null,
+    pickBox,
     r.created.length ? h('div.notice', {}, h('b', {}, 'New placeholders for content you don\'t have'),
       li(r.created, (x) => [h('b', {}, `${x.kind}: `), x.name]),
       h('div.muted.tiny', {}, 'Each one is built from the sheet (features text, proficiencies, hit die, spell slots, speed…) and saved to My Homebrew, marked “D&D Beyond import”. They work in the builder and compendium like anything else; edit them on the Homebrew page to fill in what the PDF leaves out, like spell descriptions or feature levels.')) : null,

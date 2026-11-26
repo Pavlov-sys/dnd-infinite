@@ -1,5 +1,6 @@
 // Rules engine: turns a stored character (choices only) into a full set of derived stats.
 // Pure functions, no DOM — easy to unit test and reuse (e.g. in a future server or VTT plugin).
+import { ammoForWeapon } from './consumables.js';
 import {
   ABILITIES, SKILLS, FULL_CASTER_SLOTS, PACT_SLOTS,
   getClass, getSpecies, getBackground, getFeat, getItem, getSpell,
@@ -314,6 +315,7 @@ function computeBase(c) {
       name: w.name, bonus, damage: `${die}${mods[ab] ? fmt(mods[ab]) : ''}`, dtype: w.dtype, props: w.props,
       range: w.range || (w.props.includes('Reach') ? '10 ft' : '5 ft'), versatile: w.versatile ? `${w.versatile}${mods[ab] ? fmt(mods[ab]) : ''}` : null,
       mastery: masteries.includes(w.id) ? w.mastery : null, masteryProp: w.mastery || null, prop: w.range, prof, kind: w.kind, category: w.category, equipped: e.equipped, pact,
+      ammo: ammoForWeapon(w), invIdx: e.idx,
     });
   }
   const unarmedAb = monkDie && mods.dex > mods.str ? 'dex' : 'str';
@@ -357,6 +359,7 @@ function computeBase(c) {
   else if (c.abilities.method === 'standard' && Object.keys(c.abilities.assigned || {}).length < 6) warnings.push('Assign all six ability scores.');
   if (bg && !c.abilities.bgBonus?.mode) warnings.push('Assign your background ability score increases.');
   for (const slot of featSlots(cls, level)) if (!c.levelFeats?.[slot.key]) warnings.push(`Choose a feat for level ${slot.level}.`);
+  if (spellcasting && (c.spells?.prepared || []).length > spellcasting.preparedMax) warnings.push(`${c.spells.prepared.length} spells prepared, but a level ${level} ${cls.name} can prepare ${spellcasting.preparedMax}. Unprepare ${c.spells.prepared.length - spellcasting.preparedMax}.`);
 
   return {
     cls, sub, species, bg, level, pb, scores, scoreParts, mods, saves, skills, hpMax, hitDie: hd, ac, acNote, initiative, speed,

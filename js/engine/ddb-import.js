@@ -452,7 +452,9 @@ function convert(rawFields, { now = new Date(), collect = false } = {}) {
     c.extras.spells.push({ spellId: sp.id, source: isClassSpell ? r.source : r.source || 'Imported' });
   }
 
-  if (overflow && cls?.id === 'wizard') report.warnings.push(`The PDF lists all ${c.spells.spellbook.length} spells in the spellbook but doesn't say which are prepared, so the first ${sc?.preparedMax} were prepared. Check them against D&D Beyond and use Prepare / Unprepare in the Spells tab.`);
+  // D&D Beyond's PDF lists a wizard's whole spellbook without marking which spells are prepared,
+  // so the import preview asks (see report.preparePick) instead of guessing.
+  if (overflow && cls?.id === 'wizard') report.preparePick = { max: sc.preparedMax, spellbook: [...c.spells.spellbook] };
   else if (overflow) report.notes.push(`${overflow} ${cls?.name} spell${overflow > 1 ? 's' : ''} beyond your ${sc?.preparedMax}-spell prepared limit ${overflow > 1 ? 'were' : 'was'} listed as other spell${overflow > 1 ? 's' : ''}. Swap which ones are prepared in the builder.`);
   // Free once-per-Long-Rest casts already used ("1/LR (Used)")
   for (const r of spellRows) if (/\(used\)/i.test(r.notes || '')) { const sp = findByName('spells', r.name); if (sp) c.used.resources[`free-${sp.id}`] = 1; }

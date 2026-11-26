@@ -1,0 +1,715 @@
+{
+  "format": "dnd-infinite-pack",
+  "formatVersion": 1,
+  "id": "test-homebrew",
+  "name": "Test Homebrew (for testing)",
+  "author": "Infinity Codex",
+  "version": "1.0.0",
+  "license": "CC-BY-4.0",
+  "color": "#3a3f4a",
+  "description": "One of everything, for testing the builder, sheet, compendium and Library. **Not for real games.** Every name starts with \"Test\".",
+  "content": {
+    "classes": [
+      {
+        "id": "test-runeblade",
+        "name": "Test Runeblade",
+        "tagline": "TEST CLASS: a half-casting warrior who carves runes into their weapon.",
+        "desc": "A homebrew class for testing. Half caster (Intelligence) with its own spell list, two resources, weapon mastery and features at several levels.",
+        "hitDie": 10,
+        "primary": [
+          "str",
+          "int"
+        ],
+        "saves": [
+          "con",
+          "int"
+        ],
+        "armor": [
+          "light",
+          "medium",
+          "shield"
+        ],
+        "weapons": [
+          "simple",
+          "martial"
+        ],
+        "tools": [
+          "Smith's Tools"
+        ],
+        "skillChoices": {
+          "count": 2,
+          "from": [
+            "arcana",
+            "athletics",
+            "history",
+            "insight",
+            "intimidation",
+            "investigation"
+          ]
+        },
+        "caster": {
+          "type": "half",
+          "ability": "int",
+          "list": "test-runeblade",
+          "cantrips": [
+            2,
+            2,
+            2,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4,
+            4
+          ],
+          "prepared": [
+            2,
+            3,
+            4,
+            5,
+            6,
+            6,
+            7,
+            7,
+            9,
+            9,
+            10,
+            10,
+            11,
+            11,
+            12,
+            12,
+            14,
+            14,
+            15,
+            15
+          ]
+        },
+        "asiLevels": [
+          4,
+          8,
+          12,
+          16
+        ],
+        "subclassLevel": 3,
+        "subclassTitle": "Rune Tradition",
+        "resources": [
+          {
+            "id": "rune-carving",
+            "name": "Rune Carving",
+            "reset": "long",
+            "uses": "int"
+          },
+          {
+            "id": "runic-ward",
+            "name": "Runic Ward",
+            "reset": "short",
+            "uses": 1
+          }
+        ],
+        "choices": [
+          {
+            "id": "masteries",
+            "level": 1,
+            "type": "weapon-mastery",
+            "count": [
+              2,
+              2,
+              2,
+              2,
+              2,
+              2,
+              2,
+              2,
+              2,
+              3,
+              3,
+              3,
+              3,
+              3,
+              3,
+              3,
+              3,
+              3,
+              3,
+              3
+            ],
+            "name": "Weapon Mastery"
+          }
+        ],
+        "features": [
+          {
+            "level": 1,
+            "name": "Rune Carving",
+            "desc": "As a Bonus Action, you carve a rune into a weapon you hold. For 1 minute it deals an extra **1d4 Force** damage on a hit. You can do this a number of times equal to your Intelligence modifier (minimum once), and regain all uses on a Long Rest."
+          },
+          {
+            "level": 2,
+            "name": "Runic Ward",
+            "desc": "When you take damage, you can use your Reaction to reduce it by 1d10 + your Runeblade level. Once per Short Rest."
+          },
+          {
+            "level": 3,
+            "name": "Rune Tradition",
+            "desc": "Choose a subclass. You gain its features at level 3 and later levels."
+          },
+          {
+            "level": 5,
+            "name": "Extra Attack",
+            "desc": "You can attack twice, instead of once, whenever you take the Attack action on your turn."
+          },
+          {
+            "level": 11,
+            "name": "Empowered Runes",
+            "desc": "Rune Carving now deals an extra 1d8 Force damage."
+          },
+          {
+            "level": 20,
+            "name": "Runelord",
+            "desc": "Your carved runes last until you dismiss them."
+          }
+        ],
+        "subclasses": [],
+        "equipment": [
+          {
+            "id": "A",
+            "label": "Gear",
+            "items": [
+              [
+                "longsword",
+                1
+              ],
+              [
+                "leather-armor",
+                1
+              ],
+              [
+                "explorers-pack",
+                1
+              ]
+            ],
+            "gp": 12
+          },
+          {
+            "id": "B",
+            "label": "Gold",
+            "items": [],
+            "gp": 110
+          }
+        ]
+      }
+    ],
+    "subclasses": [
+      {
+        "id": "test-path-of-embers",
+        "classId": "test-runeblade",
+        "name": "Test Path of Embers",
+        "desc": "TEST SUBCLASS for the Test Runeblade.",
+        "text": "Runebladers who bind fire into their runes.",
+        "features": [
+          {
+            "level": 3,
+            "name": "Ember Rune",
+            "desc": "Your Rune Carving damage becomes Fire instead of Force."
+          },
+          {
+            "level": 7,
+            "name": "Kindled Skin",
+            "desc": "You have Resistance to Fire damage."
+          },
+          {
+            "level": 15,
+            "name": "Inferno",
+            "desc": "Once per Long Rest, you can cast Fireball without a spell slot."
+          }
+        ]
+      },
+      {
+        "id": "test-path-of-the-forge",
+        "classId": "fighter",
+        "name": "Test Forge Knight",
+        "desc": "TEST SUBCLASS for the Fighter (a core class).",
+        "features": [
+          {
+            "level": 3,
+            "name": "Forged Armor",
+            "desc": "While wearing Heavy armor, you gain a +1 bonus to AC."
+          },
+          {
+            "level": 7,
+            "name": "Hammer Blow",
+            "desc": "Once per turn, when you hit with a weapon, you can push the target 10 feet."
+          },
+          {
+            "level": 10,
+            "name": "Anvil Stance",
+            "desc": "You can't be knocked Prone."
+          }
+        ]
+      }
+    ],
+    "species": [
+      {
+        "id": "test-cinderkin",
+        "name": "Test Cinderkin",
+        "desc": "TEST SPECIES: small folk born near volcanic vents.",
+        "size": "Small",
+        "speed": 30,
+        "darkvision": 60,
+        "hpPerLevel": 1,
+        "resist": [
+          "fire"
+        ],
+        "choices": [],
+        "traits": [
+          {
+            "level": 1,
+            "name": "Darkvision",
+            "desc": "You have Darkvision with a range of 60 feet."
+          },
+          {
+            "level": 1,
+            "name": "Ember Skin",
+            "desc": "You have Resistance to Fire damage."
+          },
+          {
+            "level": 1,
+            "name": "Spark Breath",
+            "desc": "As a Magic action, you exhale sparks in a 15-foot Cone. Each creature in it makes a Dexterity saving throw (DC 8 + your Constitution modifier + your Proficiency Bonus), taking 1d10 Fire damage on a failure or half as much on a success. Uses equal to your Proficiency Bonus per Long Rest."
+          },
+          {
+            "level": 3,
+            "name": "Kindle",
+            "desc": "You learn the Light cantrip."
+          }
+        ]
+      }
+    ],
+    "backgrounds": [
+      {
+        "id": "test-smithy-apprentice",
+        "name": "Test Smithy Apprentice",
+        "desc": "TEST BACKGROUND: you grew up at the forge.",
+        "abilities": [
+          "str",
+          "con",
+          "int"
+        ],
+        "skills": [
+          "athletics",
+          "history"
+        ],
+        "tool": "Smith's Tools",
+        "feat": {
+          "id": "savage-attacker"
+        },
+        "equipment": [
+          {
+            "id": "A",
+            "label": "Gear",
+            "items": [
+              [
+                "dagger",
+                1
+              ],
+              [
+                "healers-kit",
+                1
+              ]
+            ],
+            "gp": 14
+          },
+          {
+            "id": "B",
+            "label": "Gold",
+            "items": [],
+            "gp": 50
+          }
+        ]
+      }
+    ],
+    "feats": [
+      {
+        "id": "test-rune-adept",
+        "name": "Test Rune Adept",
+        "category": "general",
+        "prereq": "Level 4+",
+        "desc": "TEST FEAT: +1 to INT/WIS/CHA, one skill, and initiative.",
+        "text": "TEST FEAT. You gain the following benefits:\n**Ability Score Increase.** Increase your Intelligence, Wisdom or Charisma by 1.\n**Rune Lore.** You gain proficiency in one skill of your choice.\n**Quick Read.** Add your Proficiency Bonus to Initiative.",
+        "choices": [
+          {
+            "id": "ability",
+            "type": "ability-plus1",
+            "options": [
+              "int",
+              "wis",
+              "cha"
+            ]
+          },
+          {
+            "id": "skills",
+            "type": "skill",
+            "count": 1
+          }
+        ],
+        "effects": {
+          "initiativeProf": true
+        },
+        "plusOne": "int,wis,cha",
+        "skillCount": 1,
+        "initiativeProf": true
+      },
+      {
+        "id": "test-forge-born",
+        "name": "Test Forge-Born",
+        "category": "origin",
+        "desc": "TEST ORIGIN FEAT.",
+        "text": "TEST ORIGIN FEAT. You gain proficiency in two skills of your choice.",
+        "choices": [
+          {
+            "id": "skills",
+            "type": "skill",
+            "count": 2
+          }
+        ],
+        "skillCount": 2
+      }
+    ],
+    "spells": [
+      {
+        "id": "test-spark-bolt",
+        "name": "Test Spark Bolt",
+        "level": 0,
+        "school": "Evocation",
+        "time": "Action",
+        "range": "120 feet",
+        "components": "V, S",
+        "duration": "Instantaneous",
+        "attack": true,
+        "damage": "1d10 lightning",
+        "classes": [
+          "test-runeblade",
+          "wizard",
+          "sorcerer"
+        ],
+        "desc": "TEST CANTRIP (spell attack). Make a ranged spell attack. On a hit, the target takes 1d10 Lightning damage.",
+        "higherLevel": "The damage increases by 1d10 when you reach levels 5 (2d10), 11 (3d10) and 17 (4d10)."
+      },
+      {
+        "id": "test-ember-lash",
+        "name": "Test Ember Lash",
+        "level": 2,
+        "school": "Evocation",
+        "time": "Bonus Action",
+        "range": "30 feet",
+        "components": "V, S, M (a pinch of soot)",
+        "duration": "Concentration, up to 1 minute",
+        "concentration": true,
+        "save": "dex",
+        "damage": "2d8 fire",
+        "classes": [
+          "test-runeblade",
+          "wizard"
+        ],
+        "desc": "TEST SPELL (saving throw, upcast). A whip of flame lashes a creature. It makes a Dexterity saving throw, taking 2d8 Fire damage on a failure or half as much on a success.",
+        "higherLevel": "The damage increases by 1d8 for each spell slot level above 2nd."
+      },
+      {
+        "id": "test-mending-glow",
+        "name": "Test Mending Glow",
+        "level": 1,
+        "school": "Abjuration",
+        "time": "Action",
+        "range": "Touch",
+        "components": "V, S",
+        "duration": "Instantaneous",
+        "damage": "2d4 healing",
+        "classes": [
+          "test-runeblade",
+          "cleric"
+        ],
+        "ritual": false,
+        "desc": "TEST SPELL (healing). A creature you touch regains 2d4 + your spellcasting modifier Hit Points.",
+        "higherLevel": "The healing increases by 2d4 for each spell slot level above 1st."
+      },
+      {
+        "id": "test-rune-of-warding",
+        "name": "Test Rune of Warding",
+        "level": 1,
+        "school": "Abjuration",
+        "time": "1 minute",
+        "range": "Self",
+        "components": "V, S, M (chalk)",
+        "duration": "8 hours",
+        "ritual": true,
+        "classes": [
+          "test-runeblade"
+        ],
+        "desc": "TEST SPELL (ritual, no roll). You draw a rune that alerts you when a creature enters a 20-foot area around it."
+      }
+    ],
+    "items": [
+      {
+        "id": "test-rune-sword",
+        "name": "Test Rune Sword",
+        "type": "weapon",
+        "category": "martial",
+        "kind": "melee",
+        "damage": "1d8",
+        "dtype": "slashing",
+        "props": [
+          "Versatile",
+          "Finesse"
+        ],
+        "versatile": "1d10",
+        "mastery": "Vex",
+        "cost": 30,
+        "weight": 3,
+        "desc": "TEST WEAPON (melee, finesse, versatile)."
+      },
+      {
+        "id": "test-pepperbox",
+        "name": "Test Pepperbox",
+        "type": "weapon",
+        "category": "martial",
+        "kind": "ranged",
+        "damage": "1d10",
+        "dtype": "piercing",
+        "props": [
+          "Ammunition",
+          "Loading"
+        ],
+        "range": "60/180",
+        "mastery": "Slow",
+        "cost": 250,
+        "weight": 5,
+        "desc": "TEST WEAPON (ranged, loading)."
+      },
+      {
+        "id": "test-throwing-axe",
+        "name": "Test Throwing Axe",
+        "type": "weapon",
+        "category": "simple",
+        "kind": "melee",
+        "damage": "1d6",
+        "dtype": "slashing",
+        "props": [
+          "Light",
+          "Thrown"
+        ],
+        "range": "20/60",
+        "mastery": "Nick",
+        "cost": 5,
+        "weight": 2,
+        "desc": "TEST WEAPON (light, thrown)."
+      },
+      {
+        "id": "test-scale-coat",
+        "name": "Test Scale Coat",
+        "type": "armor",
+        "armorType": "medium",
+        "ac": 15,
+        "stealthDis": true,
+        "cost": 60,
+        "weight": 40,
+        "props": [],
+        "desc": "TEST ARMOR (medium, AC 15, Stealth disadvantage)."
+      },
+      {
+        "id": "test-forge-plate",
+        "name": "Test Forge Plate",
+        "type": "armor",
+        "armorType": "heavy",
+        "ac": 18,
+        "strReq": 15,
+        "stealthDis": true,
+        "cost": 1500,
+        "weight": 65,
+        "props": [],
+        "desc": "TEST ARMOR (heavy, AC 18, STR 15)."
+      },
+      {
+        "id": "test-buckler",
+        "name": "Test Buckler",
+        "type": "armor",
+        "armorType": "shield",
+        "ac": 2,
+        "cost": 10,
+        "weight": 4,
+        "props": [],
+        "desc": "TEST SHIELD (+2 AC)."
+      },
+      {
+        "id": "test-travelers-cloak",
+        "name": "Test Traveler's Cloak",
+        "type": "gear",
+        "clothing": true,
+        "cost": 2,
+        "weight": 3,
+        "props": [],
+        "desc": "TEST CLOTHING."
+      },
+      {
+        "id": "test-rune-chisel",
+        "name": "Test Rune Chisel Kit",
+        "type": "gear",
+        "subtype": "other-tools",
+        "cost": 15,
+        "weight": 2,
+        "props": [],
+        "desc": "TEST TOOL."
+      },
+      {
+        "id": "test-lantern-of-truth",
+        "name": "Test Lantern of Truth",
+        "type": "magic-item",
+        "category": "Wondrous Items",
+        "rarity": "Rare",
+        "attunement": true,
+        "cost": 0,
+        "weight": 2,
+        "props": [],
+        "desc": "TEST MAGIC ITEM (rare, attunement). While lit, invisible creatures within 30 feet are outlined in pale light."
+      },
+      {
+        "id": "test-potion-of-sparks",
+        "name": "Test Potion of Sparks",
+        "type": "magic-item",
+        "category": "Potions",
+        "rarity": "Common",
+        "attunement": false,
+        "cost": 0,
+        "weight": 0.5,
+        "props": [],
+        "desc": "TEST POTION (common). When you drink it, your next weapon hit deals an extra 1d6 Lightning damage."
+      }
+    ],
+    "monsters": [
+      {
+        "id": "test-ember-drake",
+        "name": "Test Ember Drake",
+        "size": "Medium",
+        "kind": "dragon",
+        "alignment": "unaligned",
+        "ac": 14,
+        "hp": 39,
+        "hitDice": "6d8 + 12",
+        "speed": "30 ft., fly 60 ft.",
+        "scores": [
+          15,
+          12,
+          14,
+          6,
+          11,
+          8
+        ],
+        "senses": "darkvision 60 ft., passive Perception 12",
+        "languages": "—",
+        "cr": 2,
+        "xp": 450,
+        "resist": [],
+        "immune": [
+          "fire"
+        ],
+        "traits": [
+          {
+            "name": "Heated Scales",
+            "desc": "TEST TRAIT. A creature that touches the drake takes 2 (1d4) Fire damage."
+          }
+        ],
+        "actions": [
+          {
+            "name": "Multiattack",
+            "desc": "The drake makes two Bite attacks."
+          },
+          {
+            "name": "Bite",
+            "desc": "Melee Attack Roll: +4, reach 5 ft. Hit: 6 (1d8 + 2) Piercing damage."
+          },
+          {
+            "name": "Fire Breath (Recharge 5–6)",
+            "desc": "Dexterity Saving Throw: DC 12, each creature in a 15-foot Cone. Failure: 14 (4d6) Fire damage. Success: Half damage."
+          }
+        ],
+        "bonusActions": [
+          {
+            "name": "Hop",
+            "desc": "The drake moves up to half its Speed without provoking Opportunity Attacks."
+          }
+        ],
+        "reactions": [
+          {
+            "name": "Flare",
+            "desc": "When hit by an attack, the drake gains 5 Temporary Hit Points."
+          }
+        ],
+        "legendary": []
+      },
+      {
+        "id": "test-rune-golem",
+        "name": "Test Rune Golem",
+        "size": "Large",
+        "kind": "construct",
+        "alignment": "unaligned",
+        "ac": 17,
+        "hp": 114,
+        "hitDice": "12d10 + 48",
+        "speed": "30 ft.",
+        "scores": [
+          20,
+          9,
+          18,
+          3,
+          11,
+          1
+        ],
+        "senses": "darkvision 120 ft., passive Perception 10",
+        "languages": "understands its creator's languages",
+        "cr": 6,
+        "xp": 2300,
+        "resist": [
+          "force"
+        ],
+        "immune": [
+          "poison",
+          "psychic"
+        ],
+        "traits": [
+          {
+            "name": "Rune-Bound",
+            "desc": "TEST TRAIT. The golem has Advantage on saving throws against spells."
+          }
+        ],
+        "actions": [
+          {
+            "name": "Multiattack",
+            "desc": "The golem makes two Slam attacks."
+          },
+          {
+            "name": "Slam",
+            "desc": "Melee Attack Roll: +8, reach 5 ft. Hit: 16 (2d10 + 5) Bludgeoning damage."
+          }
+        ],
+        "bonusActions": [],
+        "reactions": [],
+        "legendary": [
+          {
+            "name": "Stomp",
+            "desc": "TEST LEGENDARY ACTION. Each creature within 10 feet makes a DC 15 Strength save or falls Prone."
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,6 +1,8 @@
-// App shell and hash router. Routes: #home, #build-<id>-<step>, #sheet-<id>, #compendium, #homebrew, #campaigns
+// App shell and hash router. Routes: #home, #build-<id>-<step>, #sheet-<id>, #compendium, #homebrew, #dm, #guide
 import { h } from './ui/dom.js';
 import { renderHome } from './ui/home.js';
+import { renderGuide } from './ui/guide.js';
+import { renderDM } from './ui/dm.js';
 import { renderBuilder } from './ui/builder.js';
 import { renderSheet } from './ui/sheet.js';
 import { clearPageBackground } from './ui/sheet-style.js';
@@ -29,7 +31,7 @@ for (const [rel, href] of [['icon', LOGO_ICON], ['apple-touch-icon', LOGO_TOUCH]
 const root = document.getElementById('app');
 const go = (hash) => { if (location.hash.slice(1) === hash) route(); else location.hash = hash; };
 
-const NAV = [['home', 'Characters'], ['compendium', 'Compendium'], ['homebrew', 'Homebrew'], ['campaigns', 'Campaigns']];
+const NAV = [['home', 'Characters'], ['compendium', 'Compendium'], ['homebrew', 'Homebrew'], ['dm', 'DM Assistant'], ['guide', 'Guide']];
 
 let lastSection = null;
 function route() {
@@ -57,8 +59,9 @@ function route() {
   }
   if (hash === 'compendium' || hash.startsWith('compendium-')) return renderCompendium(root, hash.startsWith('compendium-') ? hash.slice(11) : (entering ? 'library' : undefined));
   if (hash === 'homebrew' || hash.startsWith('homebrew-')) return renderHomebrew(root, hash.startsWith('homebrew-') ? hash.slice(9) : null, go);
-  if (hash === 'campaigns') return root.replaceChildren(h('div.empty', {}, h('div.empty-art', {}, '🗺'), h('h2', {}, 'Campaigns are coming'),
-    h('p', {}, 'Create a campaign, invite your party, and let the DM see everyone\'s sheets. This needs the sync server on the roadmap; characters you build now will carry over.')));
+  if (hash === 'guide' || hash.startsWith('guide-')) return renderGuide(root, hash.startsWith('guide-') ? hash.slice(6) : null);
+  if (hash === 'dm') return renderDM(root);
+  if (hash === 'campaigns') { location.replace('#dm'); return; } // old link
   return renderHome(root, go);
 }
 // ---------------------------------------------------------------- page transitions
@@ -128,7 +131,7 @@ window.addEventListener('resize', () => moveInk(true));
 const notFound = () => root.replaceChildren(h('div.empty', {}, h('h2', {}, 'Character not found'), h('p', {}, 'It may have been deleted, or was saved in a different browser.'), h('a.btn.primary', { href: '#home' }, 'Back to My Characters')));
 
 function start() {
-  const NAV_ICON = { home: 'user', compendium: 'book', homebrew: 'home', campaigns: 'd20' };
+  const NAV_ICON = { home: 'user', compendium: 'book', homebrew: 'home', dm: 'screen', guide: 'help' };
   document.querySelector('.topnav').replaceChildren(...NAV.map(([id, label]) => h('a', { href: `#${id}`, 'data-route': id }, icon(NAV_ICON[id]), h('span', {}, label))),
     h('button.lock-btn', { title: 'Lock Infinity Codex on this device (asks for the passkey again)', 'aria-label': 'Lock', onclick: lock }, icon('lock')));
   let lastHash = location.hash.slice(1);

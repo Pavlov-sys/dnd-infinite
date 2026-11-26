@@ -5,6 +5,8 @@ import { compute, fmt, XP_TABLE, advantageFor, rollKeys } from '../engine/rules.
 import { quickPanel, removeSpell } from './quick-edit.js';
 import { saveCharacter, exportCharacter, listCharacters } from '../engine/store.js';
 import { levelUpWizard } from './level-up.js';
+import { SECONDARY_DAMAGE } from '../data/srd/spell-secondary.js';
+import { ammoName, ammoCount, ammoKindOfItem, spendAmmo, recoverAmmo, consumableOf, useOne, critDice } from '../engine/consumables.js';
 import { recordChange, undoLast, showUndo, hideUndo, undoDepth, lastLabel } from './undo.js';
 import { applyAppearance, customizeDialog } from './sheet-style.js';
 import { rollDice } from './dicelog.js';
@@ -50,6 +52,19 @@ const spellDamage = (sp, level, d, atLevel) => {
   const bonus = d?.spellDamageBonus?.[sp.id] || 0;
   return { dice: `${count}d${m[2]}${bonus ? fmt(bonus) : ''}`, type: m[3].trim(), upcast: at > sp.level };
 };
+/** The second damage roll of a two-part spell (Ice Knife's explosion, Acid Arrow's later acid), scaled like the first. */
+const spellDamage2 = (sp, level, d, atLevel) => {
+  const x = SECONDARY_DAMAGE[sp.id]; if (!x) return null;
+  const r = spellDamage({ ...sp, id: `${sp.id}#2`, damage: x.damage }, level, d, atLevel);
+  return r && { ...r, label: x.label, short: x.short, save: x.save };
+};
+/** Hit / DC cell: attack roll, save DC, or both (Ice Knife: +6 to hit, then a DEX save). */
+const hitDcCell = (sp, cs, save) => {
+  const atk = sp.attack ? rollBtn(`${sp.name} attack`, `1d20${fmt(cs.attack)}`, fmt(cs.attack), { d20: true, keys: rollKeys.spell() }) : null;
+  const sv = save ? h('span.dc', { title: `${save.toUpperCase()} saving throw` }, h('small', {}, save.toUpperCase()), cs.dc) : null;
+  return atk && sv ? h('div.hit-dc', {}, atk, sv) : atk || sv || '--';
+};
+const dmgStack = (sp, dmg, dmg2) => (dmg2 ? h('div.dmg-stack', {}, dmgCell(sp.name, dmg.dice, dmg.type), h('div', { title: dmg2.label }, dmgCell(`${sp.name} (${dmg2.short})`, dmg2.dice, dmg2.type, h('span.dmg2-tag', {}, `· ${dmg2.short}`)))) : dmgCell(sp.name, dmg.dice, dmg.type));
 const heals = (sp) => /regains? (a number of )?hit points|becomes stable/i.test(sp.desc || '');
 const CONDITION_RE = /\b(Blinded|Charmed|Deafened|Frightened|Grappled|Incapacitated|Invisible|Paralyzed|Petrified|Poisoned|Prone|Restrained|Stunned|Unconscious)\b(?= condition)/;
 /** Short effect label when a spell does no damage: Healing, or the condition it causes. */
@@ -136,7 +151,7 @@ export function renderSheet(root, c, go) {
     h('form.hp-adj', { onsubmit: (e) => e.preventDefault() },
       h('button.heal', { type: 'button', onclick: (e) => { const n = Number(e.target.form.amt.value) || 0; update((x) => { x.hp.current = Math.min(d.hpMax, cur + n); if (x.hp.current > 0) x.deathSaves = { success: 0, fail: 0 }; }); } }, 'HEAL'),
       h('input', { type: 'number', min: 0, name: 'amt', 'aria-label': 'Amount' }),
-      h('button.dmg', { type: 'button', onclick: (e) => { let n = Number(e.target.form.amt.value) || 0; update((x) => { const t = Math.min(x.hp.temp || 0, n); x.hp.temp = (x.hp.temp || 0) - t; n -= t; x.hp.current = Math.max(0, cur - n); }); } }, 'DAMAGE')),
+      h('button.dmg', { type: 'button', onclick: (e) => { const dealt = Number(e.target.form.amt.value) || 0; let n = dealt; update((x) => { const t = Math.min(x.hp.temp || 0, n); x.hp.temp = (x.hp.temp || 0) - t; n -= t; x.hp.current = Math.max(0, cur - n); if (x.hp.current === 0 && x.concentration) { toast(`Unconscious: concentration on ${getSpell(x.concentration.spellId)?.name || 'the spell'} ends`); x.concentration = null; } }); if (dealt > 0 && c.concentration) concentrationCheck(c, d, update, dealt); } }, 'DAMAGE')),
     cur === 0 ? deathSaves(c, update) : h('div.hp-nums', {},
       h('div', {}, h('small', {}, 'CURRENT'), h('b', {}, cur)), h('span.slash', {}, '/'),
       h('div', {}, h('small', {}, 'MAX'), h('b', {}, d.hpMax, adjMark(d, 'hp'))),
@@ -197,6 +212,7 @@ export function renderSheet(root, c, go) {
   const focusKey = document.activeElement?.dataset?.k;
   root.replaceChildren(h('div.dsheet', {},
     header,
+    concBar(c, update),
     d.warnings.length ? h('div.ds-warn', {}, '⚠ ', d.warnings.slice(0, 3).join(' '), d.warnings.length > 3 ? ` (+${d.warnings.length - 3} more)` : '', ' ', h('a', { href: `#build-${c.id}-class` }, 'Finish in builder')) : null,
     top,
     h('div.ds-body', {},
@@ -246,7 +262,7 @@ const advBadge = (keys) => {
 // Exhaustion takes 2 per level off every D20 Test rolled from the sheet.
 let exPenalty = 0;
 const withExhaustion = (label, expr, d20) => (d20 && exPenalty ? [`${label} (Exhaustion −${exPenalty})`, `${expr}-${exPenalty}`] : [label, expr]);
-const rollBtn = (label, expr, text, opts = {}) => h('button.ds-roll', { onclick: (e) => { e.stopPropagation(); const [l, x] = withExhaustion(label, expr, opts.d20); rollDice(l, x, { ...opts, adv: netAdv(opts.keys) }); } }, text ?? expr, opts.keys ? advBadge(opts.keys) : null);
+const rollBtn = (label, expr, text, opts = {}) => h('button.ds-roll', { onclick: (e) => { e.stopPropagation(); const [l, x] = withExhaustion(label, expr, opts.d20); const r = rollDice(l, x, { ...opts, adv: netAdv(opts.keys) }); opts.after?.(r); } }, text ?? expr, opts.keys ? advBadge(opts.keys) : null);
 /** Small gear on a panel caption that opens the quick-edit side panel. */
 const gear = (title, panel, rerender) => h('button.ds-gear', { title, onclick: (e) => { e.stopPropagation(); view.panel = panel; rerender(); } }, '⚙');
 const adjMark = (d, key) => (d.adjusted?.has(key) ? h('i.adj-dot', { title: 'Adjusted by hand (⚙ to change)' }) : null);
@@ -287,18 +303,107 @@ function slotTracker(c, d, update) {
   return h('div.slot-tracker', {}, h('div.st-head', {}, h('b', {}, sc.pact ? 'PACT MAGIC SLOTS' : 'SPELL SLOTS'), h('span.muted', {}, ` • reset on ${sc.pact ? 'a Short or Long Rest' : 'a Long Rest'}`)), rows);
 }
 
+// ------------------------------------------------------------------ concentration & casting rolls
+/** Casting a Concentration spell starts concentrating on it, ending any other. */
+function startConcentration(x, sp, at) {
+  if (!sp.concentration) return;
+  const prev = x.concentration?.spellId;
+  if (prev && prev !== sp.id) toast(`Stopped concentrating on ${getSpell(prev)?.name || 'the previous spell'}`);
+  x.concentration = { spellId: sp.id, at, since: Date.now() };
+}
+/** "◆ Concentrating on Bless" with End, under the sheet's header. */
+function concBar(c, update) {
+  const sp = c.concentration && getSpell(c.concentration.spellId);
+  if (!sp) return null;
+  return h('div.conc-bar', { role: 'status' }, h('span.conc-gem', { 'aria-hidden': 'true' }, '◆'),
+    h('span', {}, 'Concentrating on ', h('b', {}, sp.name), c.concentration.at > sp.level ? ` (level ${c.concentration.at})` : '', sp.duration ? h('small', {}, ` · ${String(sp.duration).replace(/^Concentration,?\s*/i, '')}`) : null),
+    h('button.conc-end', { onclick: () => update((x) => { x.concentration = null; }, `Stopped concentrating on ${sp.name}`) }, 'End'));
+}
+/** After damage while concentrating: CON save, DC 10 or half the damage (whichever is higher, max 30). */
+function concentrationCheck(c, d, update, dmg) {
+  const sp = getSpell(c.concentration?.spellId); if (!sp) return;
+  const dc = Math.min(30, Math.max(10, Math.floor(dmg / 2)));
+  const mod = d.saves.con.mod;
+  let close;
+  const roll = () => {
+    const [l, x] = withExhaustion(`Concentration (${sp.name}) CON save`, `1d20${fmt(mod)}`, true);
+    const r = rollDice(l, x, { d20: true, adv: netAdv(rollKeys.save('con')) });
+    close();
+    if (r.total >= dc) toast(`Kept concentration on ${sp.name} (${r.total} vs DC ${dc})`);
+    else { update((y) => { y.concentration = null; }, `Lost concentration on ${sp.name}`); toast(`Lost concentration on ${sp.name} (${r.total} vs DC ${dc})`); }
+  };
+  close = modal('Concentration check', h('div.conc-check', {},
+    h('p', {}, `You took ${dmg} damage while concentrating on `, h('b', {}, sp.name), '.'),
+    h('p', {}, `Make a Constitution saving throw: `, h('b', {}, `DC ${dc}`), ` (10, or half the damage if that's higher). Your CON save is ${fmt(mod)}.`)),
+  [{ label: 'I made it', onClick: () => toast(`Kept concentration on ${sp.name}`) },
+    { label: 'I failed', danger: true, onClick: () => { update((y) => { y.concentration = null; }, `Lost concentration on ${sp.name}`); } },
+    { label: `Roll CON save ${fmt(mod)}`, primary: true, onClick: () => { roll(); return false; } }]);
+}
+/** One-click casting: roll the attack, then the damage (dice doubled on a natural 20), and name the save. */
+function castRolls(c, d, sp, at, message) {
+  if (c.settings.castRolls === false) { if (message) toast(message); return; }
+  const cs = casting(d);
+  let crit = false;
+  if (sp.attack) {
+    const [l, x] = withExhaustion(`${sp.name} attack`, `1d20${fmt(cs.attack)}`, true);
+    crit = !!rollDice(l, x, { d20: true, adv: netAdv(rollKeys.spell()) }).crit;
+  }
+  const dmg = spellDamage(sp, c.level, d, at); const dmg2 = spellDamage2(sp, c.level, d, at);
+  if (dmg) rollDice(`${sp.name} damage${crit ? ' (critical)' : ''}`, crit ? critDice(dmg.dice) : dmg.dice);
+  if (dmg2) rollDice(`${sp.name} (${dmg2.short})`, dmg2.dice);
+  const save = spellSave(sp) || dmg2?.save;
+  const parts = [message, save && (!sp.attack || dmg2?.save) ? `targets make a DC ${cs.dc} ${save.toUpperCase()} save` : null, sp.concentration ? 'concentrating' : null].filter(Boolean);
+  if (parts.length) toast(parts.join(' · '));
+}
+
+// ------------------------------------------------------------------ ammunition & consumables
+/** Each attack roll with an Ammunition weapon uses one piece (undoable like any change). */
+function fireAmmo(c, d, update, a) {
+  let left = 0;
+  update((x) => { left = spendAmmo(x, d.inventory, a.ammo); }, `Fired ${ammoName(a.ammo).toLowerCase().replace(/s$/, '')} from the ${a.name}`);
+  if (left < 0) toast(`No ${ammoName(a.ammo).toLowerCase()} left: add some in the Inventory tab`);
+  else if (left <= 3) toast(`${left} ${ammoName(a.ammo).toLowerCase()} left`);
+}
+/** "Arrows 17", plus Recover after a fight (half of what was fired). */
+function ammoChip(c, d, update, kind) {
+  const n = ammoCount(d.inventory, kind); const spent = (c.used.ammo || {})[kind] || 0;
+  return h('div.ammo-chip', {}, h(`span${n ? '' : '.out'}`, { title: `${ammoName(kind)} in your inventory` }, `${ammoName(kind)}: ${n}`),
+    spent ? h('button.ammo-rec', { title: `After the fight, recover half of the ${spent} fired`, onclick: (e) => { e.stopPropagation(); let back = 0; update((x) => { back = recoverAmmo(x, d.inventory, kind); }, `Recovered ${ammoName(kind).toLowerCase()}`); toast(`Recovered ${back} of ${spent} ${ammoName(kind).toLowerCase()}`); } }, `↺ Recover ${Math.floor(spent / 2)}`) : null);
+}
+/** Use one of a consumable: drink a potion (heals), throw a flask (rolls damage), or just use it up. */
+function useItem(c, d, update, e) {
+  const k = consumableOf(e.item); if (!k) return;
+  const name = e.item.name;
+  if (k.kind === 'heal') {
+    const r = rollDice(`${name}`, k.dice);
+    const max = d.hpMax; const before = c.hp.current ?? max;
+    const gain = Math.min(max - before, Math.max(0, r.total));
+    update((x) => { x.hp.current = Math.min(max, before + Math.max(0, r.total)); if (x.hp.current > 0) x.deathSaves = { success: 0, fail: 0 }; useOne(x, e.idx); }, `Drank ${name} (+${gain} HP)`);
+    toast(`${name}: rolled ${r.total}, healed ${gain}${gain < r.total ? ' (at maximum HP)' : ''}`);
+  } else if (k.kind === 'damage') {
+    const dc = 8 + d.mods.dex + d.pb;
+    rollDice(`${name} damage`, `${k.dice}`);
+    update((x) => { useOne(x, e.idx); }, `Threw ${name}`);
+    toast(`${name}: target makes a DC ${dc} DEX save or takes ${k.dice} ${k.dtype}${k.note ? ` ${k.note}` : ''}`);
+  } else {
+    update((x) => { useOne(x, e.idx); }, `Used ${name}`);
+    toast(`Used ${name}${e.qty > 1 ? ` (${e.qty - 1} left)` : ''}`);
+  }
+}
+
 // ------------------------------------------------------------------ actions tab
-function attackRows(c, d) {
+function attackRows(c, d, update) {
   const sc = casting(d);
   const rows = d.attacks.map((a) => h('tr', {},
     h('td.ico', {}, a.unarmed ? '✊' : a.kind === 'ranged' ? '➶' : '⚔'),
     h('td.nm', {}, h('div', {}, a.name, a.prof ? null : h('span.warn-tag', { title: 'Not proficient: no Proficiency Bonus' }, '!')), h('small', {}, a.unarmed ? 'Melee Attack' : a.pact ? 'Pact Weapon' : `${a.kind === 'ranged' ? 'Ranged' : 'Melee'} Weapon`)),
     h('td.rng', {}, a.range.replace(/ ?ft$/, ' ft.')),
-    h('td', {}, rollBtn(`${a.name} attack`, `1d20${fmt(a.bonus)}`, fmt(a.bonus), { d20: true, keys: rollKeys.weapon() })),
+    h('td', {}, rollBtn(`${a.name} attack`, `1d20${fmt(a.bonus)}`, fmt(a.bonus), { d20: true, keys: rollKeys.weapon(), after: a.ammo && update ? () => fireAmmo(c, d, update, a) : null })),
     h('td', {}, dmgCell(a.name, a.damage, a.dtype), a.versatile ? h('div.dmg.alt', { title: 'Two-handed (Versatile)' }, rollBtn(`${a.name} damage (2H)`, a.versatile), h('span.dtype', {}, '2H')) : null),
     h('td.notes', {}, [cap(a.category || ''), ...a.props.filter((p) => p !== 'Range')].filter(Boolean).join(', '),
       a.masteryProp ? [', ', h(`span${a.mastery ? '.mastery' : ''}`, { title: `${a.mastery ? 'Mastery (you can use this): ' : 'Mastery property: '}${WEAPON_MASTERIES[a.masteryProp] || ''}` }, a.masteryProp)] : null,
-      a.prop && a.props.includes('Thrown') ? `, Range (${a.prop})` : null)));
+      a.prop && a.props.includes('Thrown') ? `, Range (${a.prop})` : null,
+      a.ammo && update ? ammoChip(c, d, update, a.ammo) : null)));
   for (const { sp, source } of spellEntries(c, d)) {
     const dmg = spellDamage(sp, c.level, d); const save = spellSave(sp);
     if (!dmg || !(sp.attack || save) || timeKind(sp.time) !== 'action') continue;
@@ -306,8 +411,8 @@ function attackRows(c, d) {
       h('td.ico', {}, '✦'),
       h('td.nm', {}, h('div', {}, h('i', {}, sp.name), sp.concentration ? h('span.conc', { title: 'Concentration' }, ' ◆') : null), h('small', {}, [`${sp.level ? `${ORD(sp.level)} Level` : 'Cantrip'}`, source || 'Spell', sp.concentration ? 'Concentration' : null].filter(Boolean).join(' • '))),
       h('td.rng', {}, rangeAbbr(sp.range)),
-      h('td', {}, sp.attack ? rollBtn(`${sp.name} attack`, `1d20${fmt(sc.attack)}`, fmt(sc.attack), { d20: true, keys: rollKeys.spell() }) : h('span.dc', {}, h('small', {}, save.toUpperCase()), sc.dc)),
-      h('td', {}, dmgCell(sp.name, dmg.dice, dmg.type)),
+      h('td', {}, hitDcCell(sp, sc, save || SECONDARY_DAMAGE[sp.id]?.save)),
+      h('td', {}, dmgStack(sp, dmg, spellDamage2(sp, c.level, d))),
       h('td.notes', {}, [durAbbr(sp) ? `D: ${durAbbr(sp)}` : null, compAbbr(sp.components)].filter(Boolean).join(', '))));
   }
   return h('table.ds-attacks', {},
@@ -330,12 +435,12 @@ function actionsTab(c, d, update, rerender) {
 
   const out = [chips([['all', 'ALL'], ['attack', 'ATTACK'], ['action', 'ACTION'], ['bonus', 'BONUS ACTION'], ['reaction', 'REACTION'], ['other', 'OTHER'], ['limited', 'LIMITED USE']], view.act, (v) => { view.act = v; rerender(); })];
   if (view.act === 'attack') {
-    out.push(h('section.act-section', {}, h('div.act-title', {}, h('span', {}, 'ATTACKS'), h('span.muted', {}, ` • Attacks per Action: ${d.attacksPerAction}`)), attackRows(c, d)));
+    out.push(h('section.act-section', {}, h('div.act-title', {}, h('span', {}, 'ATTACKS'), h('span.muted', {}, ` • Attacks per Action: ${d.attacksPerAction}`)), attackRows(c, d, update)));
     return out;
   }
   out.push(
     section('action', 'ACTIONS', `Attacks per Action: ${d.attacksPerAction}`, [
-      attackRows(c, d),
+      attackRows(c, d, update),
       block('Actions in Combat', h('p.combat-list', {}, COMBAT_ACTIONS.map(([n, t], i) => [i ? ', ' : '', h('span.tip', { title: t }, n)]))),
       h('div.act-feature', {}, h('div.af-head', {}, h('b', {}, 'Unarmed Strike')), h('div.af-text', {}, rich(`You make a melee attack that involves using your body to deal one of the following effects:\n\n**Damage.** Make an attack roll; on a hit, you deal ${Math.max(0, 1 + d.mods.str)} Bludgeoning damage (1 + STR).\n\n**Grapple.** The target must succeed on a STR or DEX saving throw (it chooses) against DC ${8 + d.pb + d.mods.str} (8 + PB + STR) or have the Grappled condition.\n\n**Shove.** The target must succeed on a STR or DEX saving throw against DC ${8 + d.pb + d.mods.str} or you push it 5 ft away or knock it Prone.`))),
       spellLine(spellsOf('action').filter((e) => !(spellDamage(e.sp, c.level, d) && (e.sp.attack || spellSave(e.sp))))),
@@ -393,12 +498,25 @@ function spellsTab(c, d, update, rerender) {
   const shown = rows.filter((r) => (view.spellLevel === 'all' || r.at === Number(view.spellLevel))
     && (!q || [r.sp.name, r.sp.time, r.sp.damage, r.sp.school, r.sp.duration, r.source].join(' ').toLowerCase().includes(q)));
 
-  const cast = (sp, at) => update((x) => {
-    if (!sc || sp.level === 0) return;
-    if (sc.pact) { if ((x.used.pact || 0) < sc.pact.count && sp.level <= sc.pact.level) { x.used.pact = (x.used.pact || 0) + 1; toast(`Cast ${sp.name} with a level ${sc.pact.level} Pact slot`); } else toast('No Pact slots left'); return; }
-    for (let lv = at || sp.level; lv <= sc.slots.length; lv++) if ((x.used.slots[lv] || 0) < sc.slots[lv - 1]) { x.used.slots[lv] = (x.used.slots[lv] || 0) + 1; toast(`Cast ${sp.name} using a level ${lv} slot`); return; }
-    toast(`No level ${at || sp.level}+ spell slots left`);
-  });
+  // One click: spend the slot, start concentrating if the spell needs it, and roll the attack and damage.
+  const cast = (sp, at) => {
+    let castAt = 0;
+    update((x) => {
+      if (!sc || sp.level === 0) return;
+      if (sc.pact) { if ((x.used.pact || 0) < sc.pact.count && sp.level <= sc.pact.level) { x.used.pact = (x.used.pact || 0) + 1; castAt = sc.pact.level; } else toast('No Pact slots left'); }
+      else {
+        for (let lv = at || sp.level; lv <= sc.slots.length; lv++) if ((x.used.slots[lv] || 0) < sc.slots[lv - 1]) { x.used.slots[lv] = (x.used.slots[lv] || 0) + 1; castAt = lv; break; }
+        if (!castAt) toast(`No level ${at || sp.level}+ spell slots left`);
+      }
+      if (castAt) startConcentration(x, sp, castAt);
+    }, `Cast ${sp.name}${at > sp.level ? ` at level ${at}` : ''}`);
+    if (castAt) castRolls(c, d, sp, castAt, `Cast ${sp.name} using a level ${castAt}${sc.pact ? ' Pact' : ''} slot`);
+  };
+  /** Cantrips and free casts: no slot, but the same concentration and rolls. */
+  const castFree = (sp, mark) => {
+    update((x) => { mark?.(x); startConcentration(x, sp, sp.level); }, `Cast ${sp.name}`);
+    castRolls(c, d, sp, sp.level, sp.level ? `Cast ${sp.name} without a slot` : null);
+  };
   const slotBoxes = (lv) => {
     if (!sc || lv === 0) return null;
     if (sc.pact) {
@@ -420,8 +538,8 @@ function spellsTab(c, d, update, rerender) {
     const dmg = spellDamage(sp, c.level, d, at); const save = spellSave(sp);
     const freeKey = `free-${sp.id}`; const freeUsed = (c.used.resources[freeKey] || 0) >= (freePerLongRest || 0);
     const badge = at > sp.level && sp.level > 0 ? h('span.base-lv', {}, ORD(sp.level).toUpperCase()) : null;
-    const castCell = sp.level === 0 ? h('span.atwill', {}, 'AT', h('br'), 'WILL')
-      : freePerLongRest && !upcast ? h(`button.cast.use${freeUsed ? '.used' : ''}`, { title: freeUsed ? 'Free cast used — click to restore (or take a Long Rest)' : `Cast without a slot (${freePerLongRest}/Long Rest)`, onclick: (e) => { e.stopPropagation(); update((x) => { x.used.resources[freeKey] = freeUsed ? 0 : freePerLongRest; }); } }, freeUsed ? 'USED' : 'USE')
+    const castCell = sp.level === 0 ? h('button.cast.atwill', { title: c.settings.castRolls === false ? 'At will' : 'Cast (rolls the attack and damage)', onclick: (e) => { e.stopPropagation(); castFree(sp); } }, 'AT', h('br'), 'WILL')
+      : freePerLongRest && !upcast ? h(`button.cast.use${freeUsed ? '.used' : ''}`, { title: freeUsed ? 'Free cast used — click to restore (or take a Long Rest)' : `Cast without a slot (${freePerLongRest}/Long Rest)`, onclick: (e) => { e.stopPropagation(); if (freeUsed) update((x) => { x.used.resources[freeKey] = 0; }, `Restored free ${sp.name}`); else castFree(sp, (x) => { x.used.resources[freeKey] = freePerLongRest; }); } }, freeUsed ? 'USED' : 'USE')
         : free ? h('span.atwill', { title: 'Cast without a slot (see the feature that grants it)' }, 'FREE')
           : h('button.cast', { title: at > sp.level ? `${ORD(sp.level)}-level spell, cast with a level ${at} slot` : 'Cast (uses a slot)', onclick: (e) => { e.stopPropagation(); cast(sp, at); } }, badge, 'CAST');
     return [h(`tr.sp-row${open ? '.open' : ''}${upcast ? '.upcast' : ''}`, { onclick: () => { open ? view.open.delete(key) : view.open.add(key); rerender(); } },
@@ -429,8 +547,8 @@ function spellsTab(c, d, update, rerender) {
       h('td.nm', {}, h('div', {}, h('i', {}, sp.name), sp.concentration ? h('span.conc', { title: 'Concentration' }, ' ◆') : null, sp.ritual ? h('span.rit', { title: 'Ritual' }, ' Ⓡ') : null), h('small', {}, source || '')),
       h('td', {}, timeAbbr(sp.time)),
       h('td', {}, rangeAbbr(sp.range)),
-      h('td', {}, sp.attack ? rollBtn(`${sp.name} attack`, `1d20${fmt(cs.attack)}`, fmt(cs.attack), { d20: true, keys: rollKeys.spell() }) : save ? h('span.dc', {}, h('small', {}, save.toUpperCase()), cs.dc) : '--'),
-      h('td', {}, dmg ? dmgCell(sp.name, dmg.dice, dmg.type) : effectOf(sp) || h('span.muted', {}, '--')),
+      h('td', {}, hitDcCell(sp, cs, save || SECONDARY_DAMAGE[sp.id]?.save)),
+      h('td', {}, dmg ? dmgStack(sp, dmg, spellDamage2(sp, c.level, d, at)) : effectOf(sp) || h('span.muted', {}, '--')),
       h('td.notes', {}, [freePerLongRest && !upcast ? `${freePerLongRest}/LR` : null, durAbbr(sp) ? `D: ${durAbbr(sp)}` : null, compAbbr(sp.components)].filter(Boolean).join(', '))),
     open ? h('tr.sp-desc', {}, h('td', { colspan: 7 }, rich(sp.desc), sp.higherLevel ? h('p', {}, h('b', {}, 'Using a Higher-Level Spell Slot. '), sp.higherLevel) : null,
       h('p.muted.tiny', {}, `${sp.level ? `${ORD(sp.level)}-level` : 'Cantrip'} ${sp.school} · Casting Time: ${sp.time} · Range: ${sp.range} · Components: ${sp.components} · Duration: ${sp.duration}${source ? ` · Source: ${source}` : ''}`),
@@ -444,7 +562,7 @@ function spellsTab(c, d, update, rerender) {
   // Wizard spellbook: spells you know but haven't prepared.
   const unprepared = book.filter((id) => !c.spells.prepared.includes(id)).map(getSpell).filter(Boolean).sort((a, b) => a.level - b.level || a.name.localeCompare(b.name));
   const spellbook = isWizard ? h('section.sp-level.spellbook', {},
-    h('div.sp-level-head', {}, h('span', {}, 'SPELLBOOK'), h('span.muted', {}, `Prepared ${c.spells.prepared.length} / ${prepMax}`)),
+    h('div.sp-level-head', {}, h('span', {}, 'SPELLBOOK'), h(c.spells.prepared.length > prepMax ? 'span.prep-over' : 'span.muted', { title: c.spells.prepared.length > prepMax ? `Over the limit: unprepare ${c.spells.prepared.length - prepMax}` : '' }, `Prepared ${c.spells.prepared.length} / ${prepMax}`)),
     unprepared.length
       ? h('table.ds-spells', {}, h('tbody', {}, unprepared.map((sp) => h('tr', {},
         h('td.castc', {}, h('button.cast.prep', { disabled: c.spells.prepared.length >= prepMax, title: c.spells.prepared.length >= prepMax ? 'Unprepare a spell first (open it above)' : 'Prepare this spell', onclick: () => prepare(sp.id) }, 'PREP')),
@@ -458,7 +576,7 @@ function spellsTab(c, d, update, rerender) {
       h('div', {}, rollBtn('Spell attack', `1d20${fmt(cs.attack)}`, fmt(cs.attack), { d20: true, keys: rollKeys.spell() }), h('small', {}, 'SPELL ATTACK')),
       h('div', {}, h('b', {}, cs.dc), h('small', {}, 'SAVE DC'))),
     slotTracker(c, d, update),
-    h('div.ds-toolbar', {}, addSpells, sc && !isWizard && prepMax ? h('span.muted.tiny', {}, `Prepared ${c.spells.prepared.length} / ${prepMax}`) : null),
+    h('div.ds-toolbar', {}, addSpells, h('label.cast-roll-tog', { title: 'When on, CAST rolls the attack and damage too' }, h('input', { type: 'checkbox', checked: c.settings.castRolls !== false, onchange: (e) => update((x) => { x.settings.castRolls = e.target.checked; }, e.target.checked ? 'Casting rolls dice' : 'Casting doesn’t roll') }), ' Roll when casting'), sc && !isWizard && prepMax ? h('span.muted.tiny', {}, `Prepared ${c.spells.prepared.length} / ${prepMax}`) : null),
     h('input.ds-search', { type: 'search', placeholder: 'Search spell names, casting times, damage types…', value: view.spellQuery,
       oninput: (e) => { view.spellQuery = e.target.value; const pos = e.target.selectionStart; rerender(); const el = document.querySelector('.ds-search'); if (el) { el.focus(); el.setSelectionRange(pos, pos); } } }),
     chips([['all', 'ALL'], ...levels.map((l) => [String(l), l === 0 ? '-0-' : ORD(l).toUpperCase()])], view.spellLevel, (v) => { view.spellLevel = v; rerender(); }),
@@ -540,7 +658,10 @@ function inventoryTab(c, d, update, rerender) {
             h('p.muted.tiny', {}, itemDesc(e.item)), e.notes ? h('p.tiny', {}, e.notes) : null)),
           h('td', {}, h('div.stepper.small', {}, h('button', { onclick: () => update((x) => { x.inventory[i].qty = Math.max(0, x.inventory[i].qty - 1); if (!x.inventory[i].qty) x.inventory.splice(i, 1); }) }, '−'), h('span', {}, e.qty), h('button', { onclick: () => update((x) => { x.inventory[i].qty++; }) }, '+'))),
           h('td.muted', {}, e.item.weight ? +(e.item.weight * e.qty).toFixed(2) : '—'),
-          h('td.inv-acts', {}, h('button.icon-btn', { title: 'Edit', onclick: () => { view.panel = { kind: 'editItem', arg: i }; rerender(); } }, '✎'), h('button.icon-btn', { title: 'Remove', onclick: () => update((x) => { x.inventory.splice(i, 1); }) }, '✕')));
+          h('td.inv-acts', {},
+            consumableOf(e.item) && e.qty > 0 ? h('button.use-btn', { title: { heal: `Drink: regain ${consumableOf(e.item).dice} HP`, damage: `Throw: ${consumableOf(e.item).dice} ${consumableOf(e.item).dtype}` }[consumableOf(e.item).kind] || 'Use one', onclick: () => useItem(c, d, update, e) }, consumableOf(e.item).kind === 'heal' ? 'DRINK' : consumableOf(e.item).kind === 'damage' ? 'THROW' : 'USE') : null,
+            ammoKindOfItem(e.item) && (c.used.ammo || {})[ammoKindOfItem(e.item)] ? ammoChip(c, d, update, ammoKindOfItem(e.item)).lastChild : null,
+            h('button.icon-btn', { title: 'Edit', onclick: () => { view.panel = { kind: 'editItem', arg: i }; rerender(); } }, '✎'), h('button.icon-btn', { title: 'Remove', onclick: () => update((x) => { x.inventory.splice(i, 1); }) }, '✕')));
       }))),
     h('p.muted.tiny', {}, c.settings.encumbrance === 'none' ? `Carrying ${+weight.toFixed(1)} lb.` : `Carrying ${+weight.toFixed(1)} lb of ${capacity} lb capacity.`),
     c.otherPossessions ? h('p.tiny', {}, h('b', {}, 'Other possessions: '), c.otherPossessions) : null,
@@ -580,10 +701,11 @@ function shortRest(c, d, update) {
 
 function longRest(x, d) {
   x.hp.current = d.hpMax; x.hp.temp = 0; x.used.slots = {}; x.used.pact = 0; x.used.resources = {};
-  x.used.hitDice = Math.max(0, (x.used.hitDice || 0) - Math.max(1, Math.floor(x.level / 2)));
+  x.used.hitDice = 0; // 2024 rules: a Long Rest restores all spent Hit Point Dice (2014 restored half)
   x.deathSaves = { success: 0, fail: 0 }; x.exhaustion = Math.max(0, (x.exhaustion || 0) - 1);
+  x.concentration = null; // you sleep through a Long Rest, which ends Concentration
   if (x.speciesId === 'human') x.heroicInspiration = true;
-  toast('Long Rest complete: HP, slots and features restored');
+  toast('Long Rest complete: HP, Hit Dice, slots and features restored');
 }
 
 function exportDialog(c) {
